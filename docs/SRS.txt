@@ -1,0 +1,694 @@
+﻿GauAmrut
+Software Requirements Specification (SRS)
+Dairy Delivery & Billing Platform — Full-Stack Web Application
+Target Deployment: Vercel (frontend) + Render (backend) + MongoDB Atlas
+Prepared by: Senior Product Manager
+Audience: Full-Stack Development Team
+Document status: Baseline v1.0 — Level 0 (greenfield), MongoDB-native
+Date: 10 September 2026
+
+Table of Contents
+1. Introduction
+2. Overall Description
+3. Actors and Access Control
+4. Functional Requirements
+5. External Interface Requirements
+6. Non-Functional Requirements
+7. System Architecture and Technology Stack
+8. Deployment Specification (Vercel + Render + MongoDB Atlas)
+9. Data Model (MongoDB Collections)
+10. Testing Requirements and Definition of Done
+11. Decisions Requiring Product Owner Approval
+12. Appendix
+
+1. Introduction
+1.1 Purpose
+This Software Requirements Specification (SRS) defines the complete functional and non-functional requirements for GauAmrut, a multilingual, mobile-first, multi-tenant dairy-delivery and billing platform. It is written for the full-stack team building the product from zero — there is no existing codebase — and, together with Section 8 (Deployment), is sufficient to design, build, test, and run a live production application on Vercel and Render with MongoDB Atlas as the database.
+This document is binding: “shall” / “must” marks a mandatory requirement; “should” marks a strong recommendation; “may” marks optional behavior. Where any other artifact conflicts with this SRS, this SRS governs until formally revised.
+1.2 Scope
+GauAmrut lets independent milk vendors (“milkmen”) manage customers, twice-daily delivery entry, rate-based billing, payment collection, products/orders, disputes, notifications, and reports, while customers get transparent self-service visibility into their own account, and administrators operate the platform through permission-scoped controls.
+In scope for the initial production release: OTP-based registration and JWT authentication; milkman and customer profile/lifecycle management; daily delivery entry (online and offline-capable); vacation/extra adjustments; monthly billing and payment reconciliation; products and orders; disputes; in-app, real-time, email, and WhatsApp notifications; PDF/CSV exports; an admin console; and a responsive, installable, accessible, localized (English/Hindi/Gujarati) Progressive Web App backed by a REST + WebSocket API.
+Out of scope for the initial release: native mobile apps, IoT hardware integration, card custody, inventory/procurement, payroll, GPS route optimization, tax filing automation, simultaneous multi-milkman membership per customer, and AI-based demand forecasting.
+1.3 Definitions, Acronyms, and Abbreviations
+Term
+Definition
+Milkman
+Independent dairy vendor / tenant operating on the platform.
+Tenant
+A milkman's isolated business scope; every tenant-owned record carries milkman_id.
+OTP
+One-Time Password used for registration / verification.
+JWT
+JSON Web Token used for stateless session authentication.
+PWA
+Progressive Web App — installable, offline-capable web application.
+FR / NFR
+Functional Requirement / Non-Functional Requirement identifier.
+Idempotency Key
+Client-supplied key ensuring a retried write is applied at most once.
+Replica Set
+MongoDB deployment topology required to support multi-document transactions.
+IST
+Indian Standard Time (Asia/Kolkata), the default business timezone.
+
+1.4 References
+GauAmrut Product and Engineering Blueprint (PRD/SRS), reviewed 10 September 2026.
+WCAG 2.2 (Level AA) accessibility guidelines.
+OpenAPI 3.1 Specification.
+MongoDB Manual — Replica Sets and Multi-Document Transactions.
+Vercel and Render platform documentation (build / deploy configuration).
+1.5 Document Overview
+Section 2 describes the product and users at a high level. Section 3 defines actors and access control. Section 4 specifies functional requirements by module. Section 5 specifies external interfaces including the REST API. Section 6 specifies non-functional requirements. Section 7 defines the technology stack and architecture. Section 8 is the deployment specification for Vercel, Render, and MongoDB Atlas. Section 9 is the data model. Section 10 covers testing and definition of done. Section 11 lists open decisions requiring product owner approval. Section 12 is the glossary.
+2. Overall Description
+2.1 Product Perspective
+GauAmrut is a new, standalone, cloud-hosted, multi-tenant SaaS product built entirely from this specification. It consists of a single-page React application (frontend), a Node/Express REST + WebSocket API (backend), and MongoDB as the sole system of record, supported by Redis, email, and WhatsApp integrations.
+2.2 Product Functions (Summary)
+Milkman and customer registration, OTP verification, and JWT-based login.
+Milkman business identity, unique linking code, customer directory, and route ordering.
+Customer onboarding by code, history claim, and single-tenant linkage.
+Daily delivery entry (single and batch) with offline queueing and conflict handling.
+Vacation and extra delivery adjustments with audit trail.
+Monthly bill generation, payment recording, payment requests, and receipts.
+Product catalogue and order management with price/quantity snapshots.
+Dispute lifecycle management with evidence and resolution tracking.
+In-app, real-time (WebSocket), email, and WhatsApp notifications.
+PDF and CSV report generation and export.
+Permission-scoped admin console: users, operations, payments, products, disputes, analytics, settings, backups, audit log, access control.
+2.3 User Classes and Characteristics
+Full actor detail is in Section 3. In summary: Milkmen are primary operators, frequently on mobile devices outdoors on unreliable connectivity, needing fast low-friction entry. Customers consume transparency and need simple, trustworthy views of deliveries and money. Administrators need safe, permissioned, auditable controls.
+2.4 Operating Environment
+The application is delivered as a responsive web app (PWA) accessed via modern browsers on mobile and desktop. Production hosting target: static frontend build on Vercel; Node backend as a Render Web Service; MongoDB Atlas as a managed replica set; Redis as a managed add-on; outbound integrations for SMTP email and the WhatsApp Cloud API. Full deployment detail is in Section 8.
+2.5 Design and Implementation Constraints
+MongoDB is the only database and must run as a replica set (never standalone) because registration, billing, and payment require multi-document transactions.
+Money must be represented as integer minor units or Decimal128 — never native JavaScript floating point — for any accounting value.
+Timestamps are stored in UTC; service dates are interpreted in Asia/Kolkata (configurable) for display and business logic.
+Every tenant-owned document carries milkman_id; the backend derives and verifies tenant context from the authenticated session and never trusts a client-supplied tenant ID.
+The frontend builds and runs entirely as static assets suitable for Vercel; it must not depend on a Node server at runtime.
+The backend is a stateless Express process suitable for horizontal scaling on Render, with no in-memory session or job state that would break under multiple instances.
+2.6 Assumptions and Dependencies
+A MongoDB Atlas project and cluster are provisioned before backend deployment.
+A transactional email provider (SMTP-compatible, e.g., SendGrid / Postmark / SES) and WhatsApp Cloud API credentials are available before notification features are exercised end-to-end in production.
+Custom domains, if used, are purchased/managed outside this system and pointed at Vercel/Render per Section 8.
+3. Actors and Access Control
+Authorization is enforced entirely on the backend. A request is valid only if the authenticated identity matches the resource's owning tenant/customer, or the authenticated admin holds the specific named permission for that action. Knowing a resource's ID must never by itself grant access.
+Actor
+Access and Responsibilities
+Milkman
+Owns one tenant. Rapid daily route entry, customer management, collections, product/order fulfilment, reports. Often on a phone, outdoors, on unreliable connectivity.
+Customer
+Linked to exactly one milkman. Views delivery history and balance, submits pause/extra requests and payment claims, places product orders, raises disputes.
+Admin — super_admin
+Full platform authority across all modules, including access control and irreversible actions (with reason/audit).
+Admin — operations
+Manages users/lifecycle, dairy operations, products, disputes, analytics.
+Admin — finance
+Manages payments and financial analytics.
+Admin — support
+Read visibility into users and disputes for customer support.
+
+Rule: milkman-scoped requests must match the authenticated profile's own milkman_id; customer-scoped requests must match the authenticated customer; nested resources (e.g., a delivery under a customer) must match the same tenant/customer chain; admin routes require the specific named permission, not just an admin role flag.
+4. Functional Requirements
+Requirements are grouped by module. Priority: M = Must (blocks release), S = Should (strongly expected), C = Could (nice to have, may slip).
+4.1 Authentication and Account Management
+ID
+Requirement
+Priority
+FR-AUTH-01
+The system shall register role-specific milkman/customer accounts with a normalized, unique email and a password of at least 8 characters, stored using an adaptive hash (e.g., bcrypt).
+M
+FR-AUTH-02
+The system shall hash OTPs at rest and enforce expiry, a maximum attempt count, invalidation on replacement, and single use.
+M
+FR-AUTH-03
+The system shall rate-limit login and OTP endpoints. A successful login shall return role, profile identity, permissions (where applicable), and a signed JWT.
+M
+FR-AUTH-04
+Token verification shall re-check user existence and active state on every protected request. Passwords, hashes, OTPs, and secrets shall never be included in any API response.
+M
+FR-ACC-01
+A milkman profile shall include identity/contact fields, a mandatory business name, UPI ID, a unique linking code, verification status, and subscription fields.
+M
+FR-ACC-02
+The milkman's business name shall appear on dashboards, customer views, invoices, and reports.
+M
+FR-ACC-03
+Code regeneration shall be collision-safe and shall immediately invalidate the old code for new customer connections.
+M
+FR-ACC-04
+A customer profile shall include contact/address, service start/end dates, lifecycle status, language preference, cow/buffalo rates, four shift/type quantity defaults, and two route-position fields.
+M
+FR-ACC-05
+A milkman shall be able to list, search, filter, paginate, add, edit, deactivate, and reactivate customers. Delivery eligibility shall respect lifecycle and service-date fields.
+M
+FR-ACC-06
+Route updates shall validate a complete, tenant-owned set of positions. A customer shall not be able to edit rates, ownership, balance, or role.
+M
+4.2 Onboarding Journeys
+4.2.1 Milkman Onboarding
+Flow: collect identity, contact, password, and business name → send OTP → verify OTP → atomically create user and milkman profile → generate a collision-safe 8-character milkman code → redirect to dashboard → prompt to add customers, rates, defaults, and route. A failure at any step shall leave no orphaned user or profile record (the create step must be transactional).
+4.2.2 Customer Onboarding
+Flow: customer enters a milkman code → system resolves and displays the business name for confirmation → OTP verification → if unlinked delivery/billing history exists for that contact, offer a safe claim step → link the customer to exactly one milkman → from that point the customer only ever sees that tenant's data.
+4.3 Delivery and Adjustments
+ID
+Requirement
+Priority
+FR-DEL-01
+A delivery record shall store tenant, customer, date, milk type (cow/buffalo), shift (morning/evening), quantity, rate and total snapshots, optional fat/SNF values, and timestamps.
+M
+FR-DEL-02
+The backend shall validate quantity/rate ranges and calculate totals server-side. The tuple (tenant, customer, date, shift, type) shall be unique.
+M
+FR-DEL-03
+The system shall support single-entry and batch entry, and shall provide today / by-date / by-customer / by-month views.
+M
+FR-DEL-04
+Batch entry shall be transactional, or shall return item-level failures that are safely retryable without creating duplicates.
+M
+FR-DEL-05
+Corrections to delivery records shall be tenant-scoped, timestamped, and audited. A normal delete shall be a soft delete.
+M
+FR-DEL-06
+Vacation and extra adjustments shall validate ownership, an inclusive date range, overlap and cutoff rules, shift, quantities, and shall support cancellation without erasing history.
+M
+FR-DEL-07
+The frontend shall queue delivery writes made while offline and shall sync them when connectivity returns, tagging each write with an idempotency key.
+M
+4.4 Billing and Payments
+ID
+Requirement
+Priority
+FR-PAY-01
+The system shall maintain, per payment record: billing month, total, paid amount, balance/status, method/source, date, reference, receipt, notes, and soft-delete state.
+M
+FR-PAY-02
+The system shall generate exactly one reproducible bill per customer per month, computed as opening balance + delivery charges − allocations = closing balance.
+M
+FR-PAY-03
+Payment allocation to a bill shall be deterministic, transactional, and idempotent, and shall not exceed outstanding debt without a formal credit model.
+M
+FR-PAY-04
+Payment requests submitted by a customer shall move through pending → processing → approved/rejected states, retaining risk signals and reviewer identity/time.
+M
+FR-PAY-05
+Provider references and receipts shall be unique. Approval shall produce exactly one immutable receipt even if the approval action is retried.
+M
+FR-PAY-06
+Customers shall be able to export invoices/statements. Milkmen shall see payment summaries and outstanding accounts across customers.
+M
+FR-PAY-07
+Reversal or deletion of a payment shall be soft, permissioned, require a reason, and be audited.
+M
+4.5 Products and Orders
+ID
+Requirement
+Priority
+FR-PRD-01
+A milkman shall manage a tenant-scoped product catalogue (name, type, price, unit, description, availability). A customer shall see only their connected milkman's available products.
+M
+FR-PRD-02
+An order shall snapshot quantity, unit price, and total at time of order, plus delivery data and status. The backend shall validate every state transition and cancellation.
+M
+4.6 Disputes
+ID
+Requirement
+Priority
+FR-DSP-01
+Dispute types shall be quantity mismatch, quality, billing, or other. States shall be open, under review, resolved, or cancelled.
+M
+FR-DSP-02
+A dispute shall belong to one customer/tenant (optionally one delivery). Replies and resolution shall record actor and time. Permitted admins shall be able to set priority, assignment, and escalation.
+M
+4.7 Notifications
+ID
+Requirement
+Priority
+FR-NOT-01
+Users shall be able to list and mark notifications as read. WebSocket connections shall be scoped per user and per tenant. WhatsApp delivery shall use a durable outbox with retries.
+M
+FR-NOT-02
+A communication failure (email/WhatsApp/socket) shall never roll back already-committed business data; the ledger write is authoritative regardless of notification outcome.
+M
+4.8 Reports and Exports
+ID
+Requirement
+Priority
+FR-RPT-01
+The system shall provide monthly, per-customer, all-customer, payment-history, and product-sales reports.
+M
+FR-RPT-02
+On-screen, PDF, and CSV totals for the same report shall match exactly. Exports shall include business name, period, generation time, and currency; filenames and CSV formula-triggering cells shall be sanitized; large exports shall be queued rather than generated synchronously.
+M
+4.9 Administration
+ID
+Requirement
+Priority
+FR-ADM-01
+The admin console shall provide a permissioned dashboard covering users/lifecycle, dairy operations, payments, products, disputes, analytics, settings, backup, audit log, and access control.
+M
+FR-ADM-02
+Sensitive settings shall be versioned, validated, and encrypted at rest. High-risk actions shall require a reason and shall be audited.
+M
+FR-ADM-03
+The system shall never allow removal or demotion of the last remaining usable super_admin account.
+M
+4.10 Subscription (Pre-Enforcement Scaffolding)
+ID
+Requirement
+Priority
+FR-SUB-01
+Before any plan is enforced, the system shall define a plan catalogue, entitlements, trial period, renewal, grace period, cancellation, tax treatment, and manual overrides.
+S
+FR-SUB-02
+Subscription expiry shall be visible and deterministic. Legal access to the account and data export shall never be blocked solely by expiry.
+M
+5. External Interface Requirements
+5.1 User Interfaces
+Three role-specific navigation sets, all served by the same responsive PWA:
+Role
+Navigation
+Milkman
+Dashboard, Customers, Milk Records, Payments, Products, Disputes, Reports, Profile.
+Customer
+Dashboard, Delivery History, Payments, Products, Orders, Disputes, Profile.
+Admin
+Dashboard, Users, Dairy Operations, Payments, Analytics, Products, Disputes, Settings, Activity Log, Access Control.
+
+UX requirements are detailed in Section 6.5 (Usability and Accessibility).
+5.2 API Interfaces
+The backend exposes a versioned JSON REST API under /api, plus an authenticated WebSocket channel for real-time notifications.
+Route group
+Purpose
+/api/auth
+OTP issuance, milkman/customer registration, login, logout, token verification.
+/api/milkmen/:id
+Profile, code management, dashboard, customers, route, lifecycle, disputes.
+/api/customers/:id
+Dashboard, delivery records/exports, payments/requests/exports, products/orders, disputes, profile, adjustments.
+/api/records/milkmen/:id
+Single/batch delivery entry; today/date/customer/month reads; update/delete.
+/api/payments/milkmen/:id
+Payment lists, record/update/delete, requests/review, summary/outstanding.
+/api/products/milkmen/:id
+Catalogue, orders, update, sales summary.
+/api/reports/milkmen/:id
+Summaries, customer/all/payment/product reports, PDF/CSV generation.
+/api/notifications
+List notifications and update read state.
+/api/admin
+Dashboard, users, operations, payments, products, orders, disputes, logs, analytics, settings, backup, access control.
+
+API conventions: JSON envelope of { success, data, meta? } on success and a machine-readable { error: { code, message } } on failure; bounded pagination; ISO 8601 dates; explicit money amount + currency fields (never bare floats); an Idempotency-Key header required on all consequential writes (delivery entry, payment recording, payment approval); a correlation/request ID on every response for support and log tracing. Passwords, hashes, secrets, and stack traces are never exposed. The API is documented with OpenAPI 3.1, including role, permission, tenancy, request/response schema, and error cases for every endpoint.
+5.3 Software Interfaces
+System
+Interface
+MongoDB Atlas
+Primary datastore, accessed via Mongoose over a TLS connection string; replica set required for transactions.
+Redis
+Cache and distributed coordination (rate limiting, job locks, OTP throttling).
+SMTP provider
+Transactional email (OTP, receipts, statements, notifications).
+WhatsApp Cloud API
+Template-based delivery notifications via a durable retrying outbox.
+Payment provider (future)
+Provider-hosted payment collection; the platform never stores card credentials.
+Object storage
+Durable storage for generated PDFs/CSVs and encrypted backups.
+
+5.4 Communication Interfaces
+All client-server communication uses HTTPS. Real-time notifications use an authenticated, tenant/user-scoped Socket.IO channel over WSS in production. There are no hardware interfaces; the system is browser/network only.
+6. Non-Functional Requirements
+6.1 Security and Privacy
+ID
+Requirement
+NFR-SEC-01
+TLS and secure HTTP headers (Helmet) shall be enforced in production; CORS shall allow only exact, credentialed origins — never a wildcard.
+NFR-SEC-02
+Secrets shall be high-entropy, rotatable, and stored outside source control. JWT signing key and settings-encryption key shall be distinct.
+NFR-SEC-03
+Every resource-returning endpoint and every export shall be covered by a tenant-ownership test.
+NFR-SEC-04
+The system shall prevent NoSQL operator injection, XSS, prototype pollution, path traversal, and CSV formula injection.
+NFR-SEC-05
+Auth/OTP rate limits shall be enforced across distributed instances (via Redis); settings and backups shall be encrypted; service credentials shall follow least privilege.
+NFR-SEC-06
+Personally identifiable information shall be minimized, masked in logs, retained per policy, and deletable on request; secrets shall never be logged.
+NFR-SEC-07
+Payment collection shall be provider-hosted; card credentials shall never be stored by the platform.
+NFR-SEC-08
+Dependencies and deployment images shall be scanned for known vulnerabilities; audit logs shall be tamper-resistant.
+6.2 Performance
+ID
+Requirement
+NFR-PERF-01
+p95 latency for ordinary API calls shall be ≤ 500 ms under agreed normal load; mobile pages shall be interactive within ≤ 3 s; a normal report shall render within ≤ 5 s.
+NFR-PERF-02
+The system shall be load-tested to a baseline capacity of 10,000 milkmen / 100,000 customers under realistic delivery-volume traffic.
+NFR-PERF-03
+All list/report queries shall be indexed, bounded, and paginated; large exports shall run asynchronously via a job queue.
+6.3 Reliability and Availability
+ID
+Requirement
+NFR-REL-01
+Critical flows (registration, billing, payment) shall be transactional; writes and scheduled jobs shall be idempotent; the process shall shut down gracefully, finishing or safely aborting in-flight work.
+NFR-REL-02
+Encrypted, off-host backups shall run daily. Initial RPO ≤ 24 h (target ≤ 1 h once mature); RTO ≤ 4 h; restores shall be verified quarterly.
+6.4 Operability
+ID
+Requirement
+NFR-OPS-01
+The API shall be stateless and horizontally scalable; scheduled jobs shall use distributed locks to avoid duplicate execution; the service shall expose liveness, readiness, and dependency health checks.
+NFR-OPS-02
+Structured logs, metrics, and traces shall cover latency, errors, database health, job/outbox status, backup age, and authentication anomalies, with alerting on each.
+NFR-OPS-03
+Startup shall validate required environment variables and fail fast if missing; deployments shall support low-downtime rollout and rollback.
+6.5 Usability and Accessibility
+ID
+Requirement
+NFR-UX-01
+Core screens shall work from a 320px viewport with touch targets ≥ 44×44 CSS pixels.
+NFR-UX-02
+Daily entry shall use inline numeric fields, a keypad-friendly flow, sticky save/progress indication, and no per-customer modal.
+NFR-UX-03
+Every asynchronous action shall show pending, success, and failure states with a safe retry path.
+NFR-UX-04
+Financial and destructive confirmations shall explain their impact; high-risk admin actions shall require a typed reason.
+NFR-UX-05
+Empty states shall explain cause and next action; errors shall state what failed, what remains saved, and how to recover.
+NFR-UX-06
+Dates, money, quantities, milk type, shift, and status shall be shown consistently and never rely on color alone.
+NFR-UX-07
+Offline delivery data shall visibly distinguish queued, syncing, synced, and conflicted states.
+NFR-UX-08
+Unsaved changes shall be protected against accidental navigation; filters/pagination shall persist and be reflected in the URL.
+NFR-UX-09
+The system shall meet WCAG 2.2 Level AA: labelling, heading structure, focus order, full keyboard operability, contrast, live-region error announcements, and usability at 200% zoom.
+NFR-UX-10
+Mobile tables shall render as accessible cards or clearly scrollable regions, not truncated/overflowing tables.
+6.6 Localization
+ID
+Requirement
+NFR-L10N-01
+English, Hindi, and Gujarati shall be complete, equivalent experiences across all core flows, using translation keys with missing-key tests in CI.
+NFR-L10N-02
+Localized display shall never alter canonical stored values (e.g., dates/money remain in canonical form regardless of display locale).
+6.7 Maintainability
+ID
+Requirement
+NFR-MNT-01
+The codebase shall have modular boundaries (feature-based on the frontend, layered on the backend) with documented architecture and API decisions.
+NFR-MNT-02
+CI shall gate formatting/lint, automated tests, build, and dependency audit on every change.
+NFR-MNT-03
+New business rules require unit tests; new endpoints require integration/authorization tests; critical user journeys require end-to-end tests.
+NFR-MNT-04
+node_modules shall never be edited manually; dependency changes go through package.json and a lockfile-respecting install.
+6.8 Deployment and Hosting (summary)
+Full deployment requirements are specified in Section 8. In summary: the frontend shall deploy as a static build to Vercel; the backend shall deploy as a stateless Web Service to Render; MongoDB Atlas shall provide the replica-set database; all secrets shall live only in each platform's environment-variable store; both platforms shall auto-deploy from the main branch via GitHub integration, with the test suite required to pass first.
+7. System Architecture and Technology Stack
+7.1 Architecture Overview
+React PWA (feature modules, server-state cache, offline queue)
+  -> HTTPS REST and authenticated WebSocket (Socket.IO)
+  -> Express routes / middleware / controllers
+  -> domain services and policy layer
+  -> repository layer + transaction / idempotency boundary
+  -> MongoDB Atlas replica set (primary data)
+  -> Redis (cache and distributed coordination)
+  -> email / WhatsApp adapters (SMTP, WhatsApp Cloud API)
+  -> object storage for backups and exports
+
+7.2 Frontend Stack
+React 18 with Vite 5 as the build tool.
+React Router 6 for client-side routing.
+Redux Toolkit for global/server-state management; Axios for HTTP.
+Socket.IO client for real-time notifications.
+Tailwind CSS for styling; Lucide for icons.
+i18next for English/Hindi/Gujarati localization.
+IndexedDB-backed offline delivery queue for the offline-first route-entry flow.
+Vitest, Testing Library, and jsdom for unit/component tests.
+Web app manifest and service worker for installability and offline shell caching.
+7.3 Backend Stack
+Node.js (LTS) with Express 4 (CommonJS).
+Joi / Express validation middleware for request validation.
+JWT for authentication; bcryptjs for password hashing.
+Helmet for security headers; configured CORS; rate limiting middleware.
+Route → controller → service → repository (Mongoose model) layering.
+Socket.IO server for real-time notifications.
+PDFKit and a CSV writer for report generation.
+node-cron for scheduled jobs (billing generation, outbox retries), coordinated via Redis locks.
+Nodemailer (SMTP) for email; WhatsApp Cloud API client for WhatsApp notifications.
+Redis for caching, rate limiting, and distributed job locks.
+Jest for backend unit/integration tests.
+7.4 Database
+MongoDB (Atlas-hosted) is the sole database, accessed through Mongoose. It shall run as a replica set in every environment, including local development, because registration, billing, and payment flows require multi-document transactions. See Section 9 for the full data model and Section 8.3 for Atlas configuration.
+8. Deployment Specification (Vercel + Render + MongoDB Atlas)
+This section is normative for taking the application from a local repository to a live, publicly reachable production deployment. It targets three managed platforms chosen for zero/low DevOps overhead: Vercel for the frontend, Render for the backend, and MongoDB Atlas for the database.
+8.1 Deployment Topology
+Browser
+  -> Vercel (React/Vite static build, CDN + auto TLS)
+       VITE_API_URL  -> https://<render-service>.onrender.com/api
+       VITE_WS_URL   -> wss://<render-service>.onrender.com
+  -> Render (Node/Express Web Service, auto TLS)
+       MONGO_URI     -> MongoDB Atlas replica-set connection string
+       REDIS_URL     -> Render Redis or managed Redis add-on
+  -> MongoDB Atlas (replica set, automated backups)
+
+8.2 Frontend Deployment (Vercel)
+Setting
+Value
+Framework preset
+Vite
+Root directory
+frontend/
+Build command
+npm run build
+Output directory
+dist
+Install command
+npm ci
+Node version
+Pinned via package.json “engines” field, matched in Vercel project settings
+
+NFR-DEPLOY-01: The frontend shall build as static assets with no server-side runtime dependency, deployable as a Vercel static/SPA project.
+NFR-DEPLOY-02: Every pull request shall receive an automatic Vercel preview deployment; merges to main shall auto-deploy to production.
+NFR-DEPLOY-03: All client-visible configuration shall use the VITE_ prefix (VITE_API_URL, VITE_WS_URL, VITE_API_TIMEOUT, optional paging values) and shall never contain secrets, since VITE_ variables are bundled into the public build.
+NFR-DEPLOY-04: SPA client-side routing shall be configured with a catch-all rewrite to index.html so deep links and refreshes on non-root routes resolve correctly.
+8.3 Backend Deployment (Render)
+Setting
+Value
+Service type
+Web Service
+Root directory
+backend/
+Build command
+npm ci
+Start command
+npm start (e.g., node server.js)
+Health check path
+/api/health
+Instance/plan
+Start on a plan without idle-sleep for production (see NFR-DEPLOY-10)
+Node version
+Pinned via package.json “engines” field
+
+NFR-DEPLOY-05: The backend shall be a stateless process safe to run as multiple Render instances; no request-affinity or in-memory session/job state that would break under horizontal scaling.
+NFR-DEPLOY-06: /api/health shall report process liveness and, ideally, dependency reachability (database, Redis) so Render's health checks and zero-downtime deploys behave correctly.
+NFR-DEPLOY-07: CORS shall allow only the exact deployed Vercel domain(s) — production domain and, if needed, preview-deployment pattern — never a wildcard origin, per NFR-SEC-01.
+NFR-DEPLOY-08: Scheduled jobs (node-cron: billing generation, WhatsApp outbox retry) shall acquire a distributed Redis lock before running, since Render may run more than one instance.
+NFR-DEPLOY-09: Render auto-deploy shall be connected to the main branch via GitHub; the CI test suite shall be a required, passing check before a merge that triggers deployment.
+NFR-DEPLOY-10: If a plan with idle-sleep is used in early development, this shall be documented as a known cold-start limitation; production shall use a plan without idle-sleep, or a scheduled uptime ping, to keep p95 latency within NFR-PERF-01.
+8.4 Database Deployment (MongoDB Atlas)
+NFR-DEPLOY-11: The database shall be an Atlas-managed replica set (the Atlas default topology), sized appropriately for the environment (shared tier acceptable for development/staging; dedicated tier recommended for production).
+NFR-DEPLOY-12: Network access shall be restricted to Render's egress IPs where feasible; where Render's egress IPs are not static, access shall be restricted at the database-user and TLS level and broad IP ranges shall be treated as a documented, reviewed exception rather than a default.
+NFR-DEPLOY-13: A dedicated, least-privilege database user shall be created for the application (readWrite on the application database only, not an Atlas admin account).
+NFR-DEPLOY-14: Atlas Cloud Backup (automated snapshots) shall be enabled with a retention window meeting NFR-REL-02, and a restore shall be rehearsed before go-live.
+NFR-DEPLOY-15: The connection string shall enforce TLS and shall be stored only as the MONGO_URI environment variable on Render, never committed to source control.
+8.5 Redis, Email, and WhatsApp
+Redis: a managed Redis instance (Render Redis add-on or an external provider) reachable via a REDIS_URL environment variable on the backend.
+Email: an SMTP-compatible transactional email provider (e.g., SendGrid, Postmark, Amazon SES) configured via SMTP_* environment variables.
+WhatsApp: WhatsApp Cloud API credentials (token, phone number ID, template names) configured via WHATSAPP_* environment variables, used only by the outbox worker.
+8.6 Environment Variables
+8.6.1 Frontend (Vercel)
+Variable
+Where
+Purpose
+VITE_API_URL
+Vercel
+Base URL of the deployed Render API, e.g., https://gauamrut-api.onrender.com/api
+VITE_WS_URL
+Vercel
+WebSocket base URL of the same backend, e.g., wss://gauamrut-api.onrender.com
+VITE_API_TIMEOUT
+Vercel
+Request timeout in ms for the Axios client
+VITE_DEFAULT_PAGE_SIZE
+Vercel
+Optional default pagination size for list views
+
+8.6.2 Backend (Render)
+Variable
+Where
+Purpose
+NODE_ENV
+Render
+production / staging / development
+PORT
+Render
+Provided by Render at runtime; the app must bind to it
+MONGO_URI
+Render
+MongoDB Atlas replica-set connection string (TLS enforced)
+MONGO_TEST_URI
+CI only
+Separate database/cluster used for automated tests
+JWT_SECRET
+Render
+High-entropy signing key for access tokens
+SETTINGS_ENCRYPTION_KEY
+Render
+Distinct key used to encrypt sensitive admin settings; never reused from JWT_SECRET
+ADMIN_BOOTSTRAP_TOKEN
+Render
+One-time-use token to create the first super_admin
+CORS_ORIGINS
+Render
+Comma-separated exact allowed origins (Vercel production + preview pattern)
+REDIS_URL
+Render
+Connection string for the Redis instance
+SMTP_HOST / SMTP_PORT / SMTP_USER / SMTP_PASS / SMTP_FROM
+Render
+Transactional email provider credentials
+WHATSAPP_TOKEN / WHATSAPP_PHONE_ID / WHATSAPP_TEMPLATE_*
+Render
+WhatsApp Cloud API credentials and template identifiers
+BILLING_CRON_SCHEDULE
+Render
+Cron expression for monthly bill generation
+APP_TIMEZONE
+Render
+Business timezone for service-date interpretation (default Asia/Kolkata)
+BACKUP_RETENTION_DAYS
+Render
+Retention window used by backup verification jobs/alerts
+
+Rule: secrets are set only in the Vercel and Render environment-variable dashboards (or their CLI-managed equivalents) per environment; .env files are used for local development only and are excluded from version control via .gitignore.
+8.7 CI/CD and Release Process
+Source control: a single GitHub repository with frontend/ and backend/ workspaces, or two repositories, as the team prefers — either way, Vercel watches the frontend path and Render watches the backend path on the same main branch.
+Continuous Integration: on every push/PR, run lint, unit tests, integration tests, and build for both workspaces; block merge on failure (NFR-MNT-02).
+Continuous Deployment: merges to main trigger an automatic Vercel production deploy and an automatic Render deploy of the backend; pull requests get an isolated Vercel preview URL for manual QA.
+Rollback: both platforms retain prior successful deployments; a rollback is a one-click redeploy of the previous build on either platform (NFR-OPS-03).
+Custom domains: once approved, a custom domain is attached in Vercel for the frontend and, optionally, in Render for the API; both platforms provision TLS certificates automatically.
+8.8 Go-Live Checklist
+MongoDB Atlas replica set provisioned, least-privilege user created, network access reviewed, backups enabled and a restore rehearsed.
+All required backend environment variables set in Render; all required frontend environment variables set in Vercel.
+CORS_ORIGINS on Render contains only the real Vercel production domain (and preview pattern if used).
+/api/health returns healthy and is wired into Render's health check.
+Scheduled jobs (billing, outbox retry) verified to run exactly once across all backend instances.
+Tenant-isolation and idempotency negative-test suites (Section 10) pass against the deployed environment, not just locally.
+Monitoring/alerting is receiving data from the live environment before the domain is announced to real users.
+9. Data Model (MongoDB Collections)
+All collections below are validated at both the database (schema validation) and Mongoose layers. Every tenant-owned collection carries milkman_id. Money fields use integer minor units or Decimal128. Timestamps are stored in UTC.
+Collection
+Purpose and Key Fields
+users
+id, normalized email, password hash, role, active/admin role, verification status, timestamps.
+milkmen
+user ref, identity/contact, business name, UPI ID, unique code, verification/subscription fields.
+customers
+user ref, tenant ref, contact/address, rates, four quantity defaults, two route-order fields, language, lifecycle status.
+milk_records
+tenant/customer/date/type/shift, quantity, fat/SNF, rate and total snapshots, soft-delete flag.
+delivery_adjustments
+customer/tenant, vacation or extra type, date range, shift, quantities, note, status.
+monthly_bills
+tenant/customer/month, opening balance, milk charge, paid amount, closing balance, generation time.
+payments
+tenant/customer/month, totals, status/method/source, reference/receipt, date, soft-delete flag.
+payment_requests
+customer/tenant, amount/source/reference, status, risk signals, notes, reviewer.
+products
+tenant ref, name/type/price/unit/description/availability.
+product_orders
+customer/product refs, quantity and price snapshots, delivery data, status.
+disputes
+customer/tenant/delivery refs, type/status/description/resolution/priority/assignment.
+notifications
+recipient/role, type/title/message, read flag, related-entity reference.
+registration_otps
+contact, OTP hash, requirement, attempt count, expiry/consumption.
+idempotency_keys
+owner scope, key, request hash, status, cached response, expiry (TTL).
+whatsapp_outbox
+unique event id, destination/template/parameters, retry count/status/error.
+admin_settings
+section, public/encrypted settings payload, version, timestamps.
+activity_logs
+actor/action/target/tenant, change diff, reason, request context, time (append-only).
+
+9.1 Required Indexes
+Unique index on users.email (normalized).
+Unique index on each profile collection's user reference (milkmen, customers).
+Unique index on milkmen.code.
+Unique compound index on milk_records for (milkman_id, customer_id, date, shift, type) — the “logical delivery” guard.
+Unique compound index on monthly_bills for (milkman_id, customer_id, month).
+Unique compound index on idempotency_keys for (owner_scope, key).
+Unique index on payments.receipt and on provider reference fields where present.
+Unique index on whatsapp_outbox.event.
+Unique index on admin_settings.section.
+Compound indexes on (milkman_id, status/date) access paths across tenant-scoped collections, and on customer history lookups.
+TTL indexes on registration_otps.expiry and idempotency_keys.expiry.
+No collection shall embed unbounded arrays of historical records; histories are referenced, not embedded.
+10. Testing Requirements and Definition of Done
+10.1 Test Layers
+Unit tests: calculations, validators, state machines, permission checks.
+Repository tests: index enforcement, transactions, uniqueness constraints, aggregation correctness.
+API tests: authentication, tenancy isolation, idempotency, concurrency.
+Frontend component tests: accessible, localized components.
+End-to-end tests: onboarding, route entry (online and offline), adjustments, billing/payment, product orders, disputes, admin flows.
+Operational tests: load testing, dependency-outage handling, backup/restore, graceful shutdown, deployment rollback.
+10.2 Mandatory Negative Test Cases
+Milkman A requests milkman B's resources, across every resource family.
+Customer A requests customer B's resources.
+An admin without the required permission attempts a permissioned action.
+A disabled/deactivated user attempts to reuse a previously issued token.
+A request payload attempts to inject MongoDB query operators.
+The same idempotency key is submitted twice with different request content.
+Concurrent duplicate payment or delivery submissions.
+A malicious CSV export payload attempting formula injection.
+10.3 Definition of Done
+A feature is done only when: behavior and acceptance criteria are agreed; API and data compatibility are documented; tenancy and permission checks are explicit and tested; responsive and accessible states are complete; tests are proportional to risk (per Section 10.1); safe telemetry exists (no PII leakage); rollback is possible; CI is green; security findings are triaged; and this SRS is updated to reflect the shipped behavior.
+11. Decisions Requiring Product Owner Approval
+Until decided, the team shall preserve compatibility and avoid irreversible assumptions in these areas:
+Final user-facing term: “milkman” or “dairy vendor/partner”?
+Is a milkman's business name globally unique, or display-only?
+Can a customer switch milkmen, or use multiple milkmen, while retaining history?
+PII and financial data retention/deletion rules?
+Treatment of overpayment, credit, refund, and reversed payments?
+Currency, GST/tax invoicing, merchant of record, and payment provider selection?
+Adjustment cutoff time, overlap handling, and approval rules?
+Dispute SLA, escalation policy, and attachment support?
+Subscription plans, entitlements, grace periods, and pricing?
+Permanent numeric IDs vs. opaque/versioned IDs in the public API?
+Approved scale, uptime target, RPO/RTO, and data residency requirements?
+12. Appendix
+12.1 Suggested KPIs
+≥ 98% of deliveries entered same-day.
+Median delivery entry time ≤ 10 seconds per customer.
+Zero duplicate ledger writes.
+≥ 99% of bills issued without correction.
+≥ 99.5% payment-to-bill reconciliation rate.
+Zero cross-tenant data-exposure incidents.
+≥ 99.9% availability once the platform is mature.
+12.2 Business Invariants (Cross-Cutting)
+A customer belongs to exactly one milkman; every tenant-owned entity carries milkman_id.
+Client-supplied tenant IDs are untrusted; the backend always derives/verifies tenant context server-side.
+Rates and prices snapshot into deliveries/orders at the time of the transaction; later rate edits never rewrite historical records.
+Money is represented in integer minor units or Decimal128, never native floating point, for any accounting value.
+Instants are stored in UTC; service dates are interpreted in the configured timezone (Asia/Kolkata default).
+Logical delivery, customer/month bill, scoped idempotency key, receipt, and provider event are each unique.
+Soft-deleted ledger entries are excluded from totals but retained for history.
+State changes validate both the current state and the requested target state.
+Notifications are secondary; the committed ledger is always authoritative.
+Audit history is append-only for ordinary users.
+12.3 Final Acceptance Statement
+GauAmrut is production-ready when: a milkman can onboard, connect and manage customers, complete daily routes online or with safe offline recovery, generate explainable bills, reconcile payments exactly once, manage products/orders/disputes, and export trustworthy reports; a customer can independently understand and act on their own records; and an administrator can operate the platform through least-privilege, audited controls — all of this running live on Vercel + Render + MongoDB Atlas, tenant-secure, mobile-accessible, localized, observable, backed up, recoverable, and correct under retries and concurrency.

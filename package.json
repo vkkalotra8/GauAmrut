@@ -1,0 +1,22 @@
+{
+  "name": "gauamrut",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "start": "npm --prefix backend start",
+    "dev": "npm --prefix frontend run dev",
+    "dev:all": "node scripts/check-dev-ports.cjs && concurrently --kill-others -n api,web -c green,blue \"npm --prefix backend run dev\" \"npm --prefix frontend run dev\"",
+    "setup": "npm --prefix backend ci && npm --prefix frontend ci",
+    "build": "npm --prefix frontend run build",
+    "test": "npm --prefix backend test && npm --prefix frontend test",
+    "lint": "npm --prefix backend run lint && npm --prefix frontend run lint",
+    "test:e2e": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0",
+    "concurrently": "^9.2.0"
+  },
+  "engines": {
+    "node": ">=22 <25"
+  }
+}
