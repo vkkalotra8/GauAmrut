@@ -6,12 +6,13 @@ import { Plus, Check, X, Clock, CheckCircle2, MessageSquare, AlertCircle, Shoppi
 import { api, message, money, updateUser, decimalUnits, serviceDate } from '../../lib';
 import useData from '../../hooks/useData';
 import { Empty, Field, Heading, Notice, State, Modal } from '../../components/ui';
+import { MilkTrend } from '../../components/charts';
 import { demoProducts, demoOrders, demoDisputes } from '../../demo';
 
 export function CustomerHome() {
   const { t } = useTranslation();
   const user = useSelector(s => s.session.user), resource = useData('/dashboard'), profile = useData('/profile');
-  return <><Heading eyebrow={t('records.eyebrow', 'FRESH MILK. A CLEAR ACCOUNT.')} title={`${t('customerPortal.welcome', { name: user.name.split(' ')[0], defaultValue: `Hello, ${user.name.split(' ')[0]}.` })}`} description={`Your deliveries from ${user.businessName}.`}/>{profile.data?.status === 'inactive' && <Notice>Your delivery service is inactive. Your dairy can set your rates and activate it. Your existing records remain available.</Notice>}<State resource={resource}>{resource.data && <><div className="stats-grid"><article className="stat-card"><span>Today’s milk</span><strong>{resource.data.today.quantityMl / 1000} L</strong><small>{resource.data.today.entries} delivery entries</small></article><article className="stat-card"><span>Outstanding bills</span><strong>{money(resource.data.outstandingPaise)}</strong><small>Across finalized months</small></article><article className="stat-card"><span>Paid this month</span><strong>{money(resource.data.collectedPaise)}</strong><small>Recorded by your dairy</small></article></div><section className="card profile-card"><h2>{t('customerPortal.yourMilkLedger', 'Your account, at a glance')}</h2><p className="form-note">{t('customerPortal.quickLook', 'Check each delivery and your finalized monthly bills. Contact your dairy if something needs correcting.')}</p><div className="heading-actions"><NavLink className="button primary" to="/records">{t('nav.deliveryHistory', 'Delivery history')}</NavLink><NavLink className="button" to="/records?tab=adjustments">Vacation & Extra Milk</NavLink><NavLink className="button" to="/payments">{t('nav.payments', 'Bills & payments')}</NavLink></div></section></>}</State></>;
+  return <><Heading eyebrow={t('records.eyebrow', 'FRESH MILK. A CLEAR ACCOUNT.')} title={`${t('customerPortal.welcome', { name: user.name.split(' ')[0], defaultValue: `Hello, ${user.name.split(' ')[0]}.` })}`} description={`Your deliveries from ${user.businessName}.`}/>{profile.data?.status === 'inactive' && <Notice>Your delivery service is inactive. Your dairy can set your rates and activate it. Your existing records remain available.</Notice>}<State resource={resource}>{resource.data && <><div className="stats-grid"><article className="stat-card"><span>Today’s milk</span><strong>{resource.data.today.quantityMl / 1000} L</strong><small>{resource.data.today.entries} delivery entries</small></article><article className="stat-card"><span>Outstanding bills</span><strong>{money(resource.data.outstandingPaise)}</strong><small>Across finalized months</small></article><article className="stat-card"><span>Paid this month</span><strong>{money(resource.data.collectedPaise)}</strong><small>Recorded by your dairy</small></article></div>{resource.data.monthly?.length > 1 && <section className="card"><div className="card-heading"><div><h2>{t('customerPortal.monthlyTrendTitle', 'This month’s deliveries')}</h2><p>{t('customerPortal.monthlyTrendSub', 'Your daily milk, day by day')}</p></div></div><MilkTrend monthly={resource.data.monthly} gradientId="milkFillCustomer"/></section>}<section className="card profile-card"><h2>{t('customerPortal.yourMilkLedger', 'Your account, at a glance')}</h2><p className="form-note">{t('customerPortal.quickLook', 'Check each delivery and your finalized monthly bills. Contact your dairy if something needs correcting.')}</p><div className="heading-actions"><NavLink className="button primary" to="/records">{t('nav.deliveryHistory', 'Delivery history')}</NavLink><NavLink className="button" to="/records?tab=adjustments">Vacation & Extra Milk</NavLink><NavLink className="button" to="/payments">{t('nav.payments', 'Bills & payments')}</NavLink></div></section></>}</State></>;
 }
 
 export function CustomerHistory() {
@@ -89,7 +90,7 @@ export function CustomerHistory() {
       <Notice>{notice}</Notice>
 
       {activeVacation && (
-        <div className="notice" style={{ background: '#fef3c7', borderColor: '#fde68a', color: '#92400e', marginBottom: '20px' }}>
+        <div className="notice warn">
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <PauseCircle size={18} />
             <b>Vacation delivery pause currently active:</b> {activeVacation.startDate} to {activeVacation.endDate} ({activeVacation.shift} shift). Daily delivery is paused.
@@ -97,7 +98,7 @@ export function CustomerHistory() {
         </div>
       )}
 
-      <div className="tab-nav" style={{ display: 'flex', gap: '8px', marginBottom: '20px', borderBottom: '1px solid var(--border)', paddingBottom: '8px' }}>
+      <div className="tab-nav">
         <button
           type="button"
           className={`button small ${activeTab === 'history' ? 'primary' : ''}`}

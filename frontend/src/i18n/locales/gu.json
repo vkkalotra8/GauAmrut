@@ -171,7 +171,10 @@
     "reverseAdjustmentReasonLabel": "સમાયોજન ઉલટાવવાનું કારણ",
     "confirmReverseAdjustment": "સમાયોજન ઉલટાવવાની પુષ્ટિ કરો",
     "adjustmentReversedNotice": "સમાયોજન સફળતાપૂર્વક ઉલટાવાઈ ગયું.",
-    "noAdjustments": "હજી સુધી કોઈ સમાયોજન કે ક્રેડિટ નોંધાયેલ નથી."
+    "noAdjustments": "હજી સુધી કોઈ સમાયોજન કે ક્રેડિટ નોંધાયેલ નથી.",
+    "collectedLegend": "એકત્રિત",
+    "outstandingLegend": "બાકી",
+    "collectedShort": "એકત્રિત"
   },
   "queue": {
     "batchesOnDevice": "આ ઉપકરણ પર {{count}} વિતરણ બેચ",
@@ -218,7 +221,9 @@
     "profileDescription": "તમારું નામ, વિતરણ સરનામું અને ભાષા પ્રાથમિકતા અદ્યતન રાખો.",
     "preferredLanguage": "પસંદગીની ભાષા",
     "saveProfile": "પ્રોફાઇલ સાચવો",
-    "profileSaved": "પ્રોફાઇલ વિગતો અદ્યતન કરવામાં આવી."
+    "profileSaved": "પ્રોફાઇલ વિગતો અદ્યતન કરવામાં આવી.",
+    "monthlyTrendTitle": "આ મહિનાની ડિલિવરી",
+    "monthlyTrendSub": "તમારું રોજનું દૂધ, દિવસે દિવસે"
   },
   "products": {
     "eyebrow": "ખેતરમાંથી તાજા ડેરી ઉત્પાદનો",
@@ -286,5 +291,22 @@
     "title": "સૂચનાઓ",
     "markAllRead": "બધી વંચાયેલ તરીકે ચિહ્નિત કરો",
     "noNotifications": "હાલમાં કોઈ નવી સૂચના નથી."
+  },
+  "theme": {
+    "label": "થીમ",
+    "light": "લાઇટ",
+    "dark": "ડાર્ક",
+    "system": "સિસ્ટમ",
+    "switchTo": "બદલો"
+  },
+  "palette": {
+    "label": "કમાન્ડ પેલેટ",
+    "open": "કમાન્ડ પેલેટ ખોલો",
+    "search": "પેજ અને ગ્રાહકો શોધો",
+    "placeholder": "શોધો અથવા જાઓ…",
+    "noResults": "કોઈ પરિણામ નહીં. ગ્રાહકનું નામ અથવા પેજ અજમાવો.",
+    "addCustomer": "ગ્રાહક ઉમેરો",
+    "recordDelivery": "દૂધની ડિલિવરી નોંધો",
+    "generateBill": "બિલ બનાવો"
   }
 }

@@ -1,0 +1,53 @@
+const { chromium } = require('@playwright/test');
+(async () => {
+  const browser = await chromium.launch({ channel: 'msedge', headless: true });
+  const errors = [];
+  const page = await browser.newPage({ viewport: { width: 1440, height: 950 } });
+  page.on('pageerror', e => errors.push(e.message));
+  page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
+  await page.goto('http://127.0.0.1:5173/', { waitUntil: 'networkidle' });
+  await page.screenshot({ path: 'test-results/redesign-auth-desktop.png', fullPage: false });
+  await page.getByRole('button', { name: /Explore the demo/ }).click();
+  await page.waitForSelector('h1');
+  await page.waitForTimeout(600);
+  await page.screenshot({ path: 'test-results/redesign-dashboard-desktop.png', fullPage: true });
+  await page.getByRole('link', { name: 'Customers', exact: true }).click();
+  await page.waitForTimeout(600);
+  await page.screenshot({ path: 'test-results/redesign-customers-desktop.png', fullPage: true });
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.waitForTimeout(400);
+  await page.screenshot({ path: 'test-results/redesign-customers-mobile.png', fullPage: true });
+  await page.locator('.bottom-nav').getByRole('link', { name: 'Overview' }).click();
+  await page.waitForTimeout(600);
+  await page.screenshot({ path: 'test-results/redesign-dashboard-mobile.png', fullPage: true });
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  await page.setViewportSize({ width: 320, height: 720 });
+  await page.waitForTimeout(300);
+  const overflow320 = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  await page.screenshot({ path: 'test-results/redesign-dashboard-mobile-320.png', fullPage: false });
+  // New modern-UI captures (desktop): donut, dark mode, command palette
+  await page.setViewportSize({ width: 1440, height: 950 });
+  await page.waitForTimeout(300);
+  await page.getByRole('link', { name: 'Bills & payments', exact: true }).first().click();
+  await page.waitForTimeout(700);
+  await page.screenshot({ path: 'test-results/redesign-payments-desktop.png', fullPage: true });
+  for (let i = 0; i < 3; i += 1) {
+    const theme = await page.evaluate(() => document.documentElement.dataset.theme);
+    if (theme === 'dark') break;
+    await page.getByRole('button', { name: /^Theme:/ }).click();
+    await page.waitForTimeout(150);
+  }
+  const darkApplied = await page.evaluate(() => document.documentElement.dataset.theme === 'dark');
+  await page.waitForTimeout(250);
+  await page.screenshot({ path: 'test-results/redesign-payments-dark.png', fullPage: true });
+  await page.getByRole('link', { name: 'Overview', exact: true }).first().click();
+  await page.waitForTimeout(700);
+  await page.screenshot({ path: 'test-results/redesign-dashboard-dark.png', fullPage: true });
+  await page.keyboard.press('Control+K');
+  await page.waitForTimeout(350);
+  await page.screenshot({ path: 'test-results/redesign-palette-dark.png', fullPage: false });
+  await page.keyboard.press('Escape');
+  const overflowDark = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  console.log(JSON.stringify({ errors, overflow375: overflow, overflow320, darkApplied, overflowDark }));
+  await browser.close();
+})().catch(e => { console.error(e); process.exit(1); });

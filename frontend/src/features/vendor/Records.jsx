@@ -161,7 +161,7 @@ export default function Records() {
     } catch (e) { setError(message(e)); } finally { setBusy(false); }
   }
   return <><Heading eyebrow={t('records.eyebrow', 'FRESH MILK. EVERY DOORSTEP.')} title={t('records.title', 'Daily milk entry')} description={t('records.description', 'Your customers’ usual quantities are ready. Change only what is different today.')}/>
-    <div className="tab-nav" style={{ display: 'flex', gap: '8px', marginBottom: '20px', borderBottom: '1px solid var(--border)', paddingBottom: '8px' }}>
+    <div className="tab-nav">
       <button
         type="button"
         className={`button small ${activeTab === 'route' ? 'primary' : ''}`}

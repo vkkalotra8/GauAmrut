@@ -23,7 +23,12 @@ function createApp(redis) {
   app.use((req, res, next) => { req.requestId = crypto.randomUUID(); res.set('X-Request-Id', req.requestId); next(); });
   app.use(helmet());
   const allowed = (process.env.CORS_ORIGINS || 'http://127.0.0.1:5173').split(',');
-  app.use(cors({ origin: (origin, cb) => cb(origin && !allowed.includes(origin) ? new AppError(403, 'ORIGIN_DENIED', 'Origin is not allowed.') : null, true), exposedHeaders: ['X-Request-Id'], allowedHeaders: ['Content-Type', 'Authorization', 'Idempotency-Key'] }));
+  // Development convenience: outside production, also accept dev-server origins
+  // whose host is loopback or a private LAN address (LAN IPs change with DHCP, so
+  // listing every device address in CORS_ORIGINS is impractical). Public web
+  // origins (normal websites) never match this pattern.
+  const privateOrigin = origin => process.env.NODE_ENV !== 'production' && /^https?:\/\/(localhost|127(\.\d{1,3}){3}|192\.168(\.\d{1,3}){3}|10(\.\d{1,3}){3}|172\.(1[6-9]|2\d|3[01])(\.\d{1,3}){2}|\[::1\])(:\d+)?$/i.test(origin);
+  app.use(cors({ origin: (origin, cb) => cb(origin && !allowed.includes(origin) && !privateOrigin(origin) ? new AppError(403, 'ORIGIN_DENIED', 'Origin is not allowed.') : null, true), exposedHeaders: ['X-Request-Id'], allowedHeaders: ['Content-Type', 'Authorization', 'Idempotency-Key'] }));
   app.use(express.json({ limit: '100kb' }));
   const limiter = rateLimit({ windowMs: 15 * 60000, limit: 20, standardHeaders: 'draft-8', legacyHeaders: false, ...(redis ? { store: new RedisStore({ sendCommand: (...args) => redis.sendCommand(args) }) } : {}), message: { error: { code: 'RATE_LIMITED', message: 'Too many attempts. Try again in 15 minutes.' } } });
   app.get('/api/health', (_req, res) => { const ready = mongoose.connection.readyState === 1 && (!redis || redis.isReady); res.status(ready ? 200 : 503).json({ success: ready, data: { status: ready ? 'ready' : 'unavailable', database: mongoose.connection.readyState === 1, redis: redis ? redis.isReady : 'not configured' } }); });

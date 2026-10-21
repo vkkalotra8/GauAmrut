@@ -1,12 +1,14 @@
 import { useState } from 'react';
 import { useDispatch } from 'react-redux';
+import { useNavigate } from 'react-router-dom';
 import { ArrowRight, ArrowUpRight, Droplets, Leaf } from 'lucide-react';
 import { api, message, preview, signIn } from '../../lib';
 import { Brand, Field, Notice } from '../../components/ui';
-export default function Auth() {
-  const dispatch = useDispatch();
+export default function Auth({ redirectPath = '/' }) {
+  const dispatch = useDispatch(); const navigate = useNavigate();
   const [mode, setMode] = useState('login'), [email, setEmail] = useState(''), [error, setError] = useState(''), [busy, setBusy] = useState(false), [otp, setOtp] = useState(''), [dairy, setDairy] = useState(null), [onboarding, setOnboarding] = useState(null);
   const reset = next => { setMode(next); setError(''); setOtp(''); setOnboarding(null); };
+  const enter = data => { dispatch(signIn(data)); navigate(redirectPath.startsWith('/') ? redirectPath : '/', { replace: true }); };
   async function submit(event) {
     event.preventDefault(); setBusy(true); setError('');
     const body = Object.fromEntries(new FormData(event.currentTarget));
@@ -16,10 +18,10 @@ export default function Auth() {
         const r = await api.post(mode === 'register' ? '/auth/register' : '/auth/customer/register', mode === 'customer' ? { ...body, code: dairy.code } : body);
         setEmail(body.email); setOtp(r.data.data.developmentOtp || ''); setMode('verify');
       } else if (mode === 'claim') {
-        const r = await api.post('/auth/customer/complete', { onboardingToken: onboarding.onboardingToken, ...(body.history === 'new' ? { createNew: true } : { claimCustomerId: body.history }) }); dispatch(signIn(r.data.data));
+        const r = await api.post('/auth/customer/complete', { onboardingToken: onboarding.onboardingToken, ...(body.history === 'new' ? { createNew: true } : { claimCustomerId: body.history }) }); enter(r.data.data);
       } else {
         const r = await api.post(mode === 'verify' ? '/auth/verify' : '/auth/login', mode === 'verify' ? { email, otp: body.otp } : body);
-        if (r.data.data.onboardingRequired) { setOnboarding(r.data.data); setMode('claim'); } else dispatch(signIn(r.data.data));
+        if (r.data.data.onboardingRequired) { setOnboarding(r.data.data); setMode('claim'); } else enter(r.data.data);
       }
     } catch (e) { setError(message(e)); } finally { setBusy(false); }
   }

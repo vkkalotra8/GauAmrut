@@ -2,6 +2,10 @@
 
 A full-stack dairy delivery and billing application, developed from [GAUAMRUT_SRS.docx](GAUAMRUT_SRS.docx). The vendor core and first customer-onboarding increment are implemented. This is not the complete production release described in the SRS.
 
+## Interface
+
+The UI is responsive (usable down to 320px) and includes: a light/dark theme toggle (Light · Dark · Follow system, persisted per browser), a milk-delivery trend chart and collections donut chart on the dashboard and bills pages, loading skeletons and animated stat cards (all motion respects the OS reduced-motion setting), a command palette for quick navigation and customer search (**Ctrl/Cmd + K**, desktop), and a mobile quick-action button plus bottom navigation for vendor workflows on small screens.
+
 ## Run locally on Windows
 
 Prerequisites: Node.js 24, npm, and `mongod` on PATH. MongoDB must run as a replica set for transactions.

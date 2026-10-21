@@ -171,7 +171,10 @@
     "reverseAdjustmentReasonLabel": "समायोजन उलटने का कारण",
     "confirmReverseAdjustment": "समायोजन उलटने की पुष्टि करें",
     "adjustmentReversedNotice": "समायोजन सफलतापूर्वक उलट दिया गया।",
-    "noAdjustments": "अभी तक कोई समायोजन या क्रेडिट दर्ज नहीं किया गया है।"
+    "noAdjustments": "अभी तक कोई समायोजन या क्रेडिट दर्ज नहीं किया गया है।",
+    "collectedLegend": "एकत्रित",
+    "outstandingLegend": "बकाया",
+    "collectedShort": "एकत्रित"
   },
   "queue": {
     "batchesOnDevice": "इस डिवाइस पर {{count}} वितरण बैच",
@@ -218,7 +221,9 @@
     "profileDescription": "अपना नाम, वितरण का पता और भाषा प्राथमिकता अद्यतन रखें।",
     "preferredLanguage": "पसंदीदा भाषा",
     "saveProfile": "प्रोफाइल सहेजें",
-    "profileSaved": "प्रोफाइल विवरण अद्यतन किए गए।"
+    "profileSaved": "प्रोफाइल विवरण अद्यतन किए गए।",
+    "monthlyTrendTitle": "इस महीने की डिलीवरी",
+    "monthlyTrendSub": "आपका रोज़ाना दूध, दिन ब दिन"
   },
   "products": {
     "eyebrow": "खेत से ताज़ा डेयरी उत्पाद",
@@ -286,5 +291,22 @@
     "title": "सूचनाएं",
     "markAllRead": "सभी पढ़ी हुई चिह्नित करें",
     "noNotifications": "वर्तमान में कोई नई सूचना नहीं है।"
+  },
+  "theme": {
+    "label": "थीम",
+    "light": "लाइट",
+    "dark": "डार्क",
+    "system": "सिस्टम",
+    "switchTo": "बदलें"
+  },
+  "palette": {
+    "label": "कमांड पैलेट",
+    "open": "कमांड पैलेट खोलें",
+    "search": "पेज और ग्राहक खोजें",
+    "placeholder": "खोजें या जाएँ…",
+    "noResults": "कोई परिणाम नहीं। ग्राहक का नाम या पेज आज़माएँ।",
+    "addCustomer": "ग्राहक जोड़ें",
+    "recordDelivery": "दूध की डिलीवरी दर्ज करें",
+    "generateBill": "बिल बनाएँ"
   }
 }

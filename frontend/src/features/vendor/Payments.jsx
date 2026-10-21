@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useSelector } from 'react-redux';
 import { useTranslation } from 'react-i18next';
 import { Plus, Check, Search, Receipt, AlertCircle, FileText, CheckCircle2, XCircle, Printer, RotateCcw, Download } from 'lucide-react';
+import { CollectionsDonut } from '../../components/charts';
 import { Heading, Notice, State, Empty, Modal, Field } from '../../components/ui';
 import { api, money, message, decimalUnits } from '../../lib';
 import useData from '../../hooks/useData';
@@ -249,7 +250,7 @@ export default function Payments() {
       <Notice>{notice}</Notice>
       {error && <Notice error>{error}</Notice>}
 
-      <div className="tab-nav" style={{ display: 'flex', gap: '8px', marginBottom: '20px', borderBottom: '1px solid var(--border)', paddingBottom: '8px' }}>
+      <div className="tab-nav">
         <button
           type="button"
           className={`button small ${activeTab === 'bills' ? 'primary' : ''}`}
@@ -292,6 +293,7 @@ export default function Payments() {
             <h2>{t('payments.monthlyBillsHeading', 'Monthly customer bills')}</h2>
             <span className="pill">INR · ₹ (Paise Accounting)</span>
           </div>
+          {bills.data?.length > 0 && <CollectionsDonut bills={bills.data}/>}
           <State resource={bills}>
             {bills.data?.length ? (
               <div className="table-scroll">

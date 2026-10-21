@@ -171,7 +171,10 @@
     "reverseAdjustmentReasonLabel": "Adjustment reversal reason",
     "confirmReverseAdjustment": "Confirm adjustment reversal",
     "adjustmentReversedNotice": "Adjustment reversed successfully.",
-    "noAdjustments": "No adjustments or credits have been recorded yet."
+    "noAdjustments": "No adjustments or credits have been recorded yet.",
+    "collectedLegend": "Collected",
+    "outstandingLegend": "Outstanding",
+    "collectedShort": "collected"
   },
   "queue": {
     "batchesOnDevice": "{{count}} delivery batch(es) on this device",
@@ -223,7 +226,9 @@
     "profileDescription": "Keep your name, delivery address, and language preference up to date.",
     "preferredLanguage": "Preferred language",
     "saveProfile": "Save profile",
-    "profileSaved": "Profile details updated."
+    "profileSaved": "Profile details updated.",
+    "monthlyTrendTitle": "This month’s deliveries",
+    "monthlyTrendSub": "Your daily milk, day by day"
   },
   "products": {
     "eyebrow": "FARM FRESH DAIRY PRODUCTS",
@@ -291,5 +296,22 @@
     "title": "Notifications",
     "markAllRead": "Mark all read",
     "noNotifications": "No notifications right now."
+  },
+  "theme": {
+    "label": "Theme",
+    "light": "Light",
+    "dark": "Dark",
+    "system": "System",
+    "switchTo": "Switch to"
+  },
+  "palette": {
+    "label": "Command palette",
+    "open": "Open command palette",
+    "search": "Search pages and customers",
+    "placeholder": "Search or jump to…",
+    "noResults": "No matches. Try a customer name or a page.",
+    "addCustomer": "Add a customer",
+    "recordDelivery": "Record milk delivery",
+    "generateBill": "Generate a bill"
   }
 }

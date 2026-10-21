@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useSelector } from 'react-redux';
 import { api, message } from '../lib';
 import { getCachedRoute, setCachedRoute } from '../offline';
@@ -7,13 +7,18 @@ export default function useData(path, example = null) {
   const { demo, user } = useSelector(s => s.session);
   const [state, setState] = useState({ data: demo ? example : null, loading: !demo, error: '', meta: null, cached: false });
   const [revision, setRevision] = useState(0);
+  // Keep the latest example in a ref: callers may pass a fresh [] on every
+  // render, which must not re-trigger the load effect (it caused an
+  // infinite fetch/abort loop and "Maximum update depth" warnings).
+  const exampleRef = useRef(example);
+  exampleRef.current = example;
   useEffect(() => {
     const refresh = () => setRevision(n => n + 1);
     window.addEventListener('delivery-synced', refresh);
     return () => window.removeEventListener('delivery-synced', refresh);
   }, []);
   useEffect(() => {
-    if (demo) { setState({ data: example, loading: false, error: '', meta: null, cached: false }); return; }
+    if (demo) { setState({ data: exampleRef.current, loading: false, error: '', meta: null, cached: false }); return; }
     const controller = new AbortController();
     let cancelled = false;
 
@@ -52,7 +57,7 @@ export default function useData(path, example = null) {
       cancelled = true;
       controller.abort();
     };
-  }, [path, demo, user?.id, example, revision]);
+  }, [path, demo, user?.id, revision]);
   return { ...state, reload: () => setRevision(n => n + 1) };
 }
 
