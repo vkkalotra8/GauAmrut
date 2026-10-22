@@ -332,7 +332,7 @@ export default function Orders() {
                 <option value="" disabled>Select customer</option>
                 {customersResource.data?.map(c => (
                   <option key={c._id} value={c._id}>
-                    {c.name} ({c.phone})
+                    {c.name}{c.phone ? ` (${c.phone})` : ''}
                   </option>
                 ))}
               </select>

@@ -302,3 +302,57 @@ describe('New SRS Features Integration Tests', () => {
     });
   });
 });
+
+describe('Customers without a phone number', () => {
+  const base = { name: 'Leela Ben', email: '', address: '4, Gandhi Road', startDate: '2026-09-01', cowRatePaise: 6000, buffaloRatePaise: 8000, morningCowMl: 1000, eveningCowMl: 500 };
+  let phonelessId;
+
+  it('creates a customer whose phone is left empty, exactly like the add-customer form sends', async () => {
+    const res = await request(app)
+      .post('/api/customers')
+      .set('Authorization', `Bearer ${vendorToken}`)
+      .send({ ...base, phone: '' });
+    expect(res.status).toBe(201);
+    expect(res.body.data.phone).toBe('');
+    phonelessId = res.body.data._id;
+  });
+
+  it('accepts a creation payload that omits the phone field entirely', async () => {
+    const res = await request(app)
+      .post('/api/customers')
+      .set('Authorization', `Bearer ${vendorToken}`)
+      .send(base);
+    expect(res.status).toBe(201);
+    expect(res.body.data.phone).toBe('');
+  });
+
+  it('lists them in the directory like any other customer', async () => {
+    const res = await request(app)
+      .get('/api/customers?page=1')
+      .set('Authorization', `Bearer ${vendorToken}`);
+    expect(res.status).toBe(200);
+    expect(res.body.data.some(c => String(c._id) === String(phonelessId))).toBe(true);
+  });
+
+  it('still rejects a malformed phone number', async () => {
+    const res = await request(app)
+      .put(`/api/customers/${phonelessId}`)
+      .set('Authorization', `Bearer ${vendorToken}`)
+      .send({ ...base, status: 'active', phone: 'call-me-maybe' });
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('lets the dairy add a phone later when the customer gets one', async () => {
+    const res = await request(app)
+      .put(`/api/customers/${phonelessId}`)
+      .set('Authorization', `Bearer ${vendorToken}`)
+      .send({ ...base, status: 'active', phone: '9812345678' });
+    expect(res.status).toBe(200);
+    expect(res.body.data.phone).toBe('9812345678');
+    const list = await request(app)
+      .get('/api/customers?page=1')
+      .set('Authorization', `Bearer ${vendorToken}`);
+    expect(list.body.data.find(c => String(c._id) === String(phonelessId)).phone).toBe('9812345678');
+  });
+});

@@ -15,7 +15,7 @@ test('vendor registers, adds a customer, syncs offline milk, bills and records p
   await page.getByRole('link', { name: 'Customers', exact: true }).click();
   await page.getByRole('button', { name: 'Add customer', exact: true }).click();
   await page.getByLabel('Full name').fill('Journey Customer');
-  await page.getByLabel('Phone number').fill('9876543210');
+  // No phone on purpose: customers without mobile phones are first-class.
   await page.getByLabel('Service start date').fill('2025-01-01');
   await page.getByRole('dialog').getByRole('button', { name: 'Add customer', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Journey Customer' })).toBeVisible();
@@ -40,4 +40,13 @@ test('vendor registers, adds a customer, syncs offline milk, bills and records p
   await page.getByRole('button', { name: 'Confirm payment received' }).click();
   await expect(page.getByText(/Payment recorded\. Receipt #: GA-/)).toBeVisible();
   await expect(page.getByRole('cell', { name: /Settled/ })).toBeVisible();
+
+  // Later the customer gets a phone — the dairy adds it through Edit customer.
+  await page.getByRole('link', { name: 'Customers', exact: true }).click();
+  await expect(page.getByText('No phone added')).toBeVisible();
+  await page.getByRole('button', { name: 'Edit customer', exact: true }).click();
+  await page.getByLabel('Phone number').fill('9123456780');
+  await page.getByRole('dialog').getByRole('button', { name: 'Save customer', exact: true }).click();
+  await expect(page.getByText('Customer updated. Existing delivery rates were preserved.')).toBeVisible();
+  await expect(page.getByText('9123456780', { exact: true })).toBeVisible();
 });

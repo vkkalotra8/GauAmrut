@@ -796,7 +796,7 @@ export default function Payments() {
               <div>
                 <span style={{ color: 'var(--muted)', display: 'block', fontSize: '11px' }}>{t('common.customer', 'Customer')}</span>
                 <b>{activeReceipt.customer?.name}</b>
-                <div style={{ fontSize: '12px', color: 'var(--muted)' }}>{activeReceipt.customer?.phone}</div>
+                <div style={{ fontSize: '12px', color: 'var(--muted)' }}>{activeReceipt.customer?.phone || 'No phone on file'}</div>
               </div>
               <div>
                 <span style={{ color: 'var(--muted)', display: 'block', fontSize: '11px' }}>{t('common.date', 'Payment Date')}</span>
