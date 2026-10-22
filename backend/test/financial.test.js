@@ -5,6 +5,7 @@ const request = require('supertest');
 const { MongoMemoryReplSet } = require('mongodb-memory-server');
 const models = require('../src/models');
 const { createApp } = require('../src/app');
+const { today } = require('../src/domain');
 const { acquireLock, releaseLock } = require('../src/billing-scheduler');
 
 let replica, app, ownerA, tokenA, customerUserA, customerTokenA, customerDocA;
@@ -447,6 +448,94 @@ describe('Milestone 3 - Financial Workflow & Commerce', () => {
       .send({ reason: 'Again' });
     expect(doubleRev.status).toBe(409);
     expect(doubleRev.body.error.code).toBe('ALREADY_REVERSED');
+  });
+});
+
+describe('Mid-month billing, live bill refresh, and till-date dashboard stats', () => {
+  test('bills can be generated for the current month, refresh after new entries, and drive till-date dashboard numbers', async () => {
+    const month = today().slice(0, 7);
+    const date = today();
+
+    // 1. Milk delivered today (1000 ml cow @ ₹60/L = 6000 paise).
+    const firstEntry = await post('/records/batch', {
+      items: [{ customer_id: String(customerDocA._id), date, shift: 'morning', type: 'cow', quantityMl: 1000 }]
+    });
+    expect(firstEntry.status).toBe(201);
+
+    // 2. Generate the bill mid-month — previously rejected with MONTH_OPEN.
+    const billRes = await post('/bills', { customer_id: String(customerDocA._id), month });
+    expect(billRes.status).toBe(201);
+    const bill = billRes.body.data;
+    expect(bill.openingPaise).toBe(5000); // legacy opening balance
+    expect(bill.chargesPaise).toBe(6000);
+    expect(bill.closingPaise).toBe(11000);
+
+    // 3. Partial payment against the open bill.
+    const payment = await post('/payments', { bill_id: bill._id, amountPaise: 3000, method: 'upi', reference: `MIDMONTH-UTR-${Date.now()}` });
+    expect(payment.status).toBe(201);
+
+    // 4. Another delivery for the same month while the bill exists — previously PERIOD_CLOSED.
+    const secondEntry = await post('/records/batch', {
+      items: [{ customer_id: String(customerDocA._id), date, shift: 'evening', type: 'cow', quantityMl: 500 }]
+    });
+    expect(secondEntry.status).toBe(201);
+
+    // 5. Regenerating refreshes the same bill instead of returning a stale copy.
+    const refreshedRes = await post('/bills', { customer_id: String(customerDocA._id), month });
+    expect(refreshedRes.status).toBe(201);
+    const refreshed = refreshedRes.body.data;
+    expect(String(refreshed._id)).toBe(String(bill._id));
+    expect(refreshed.chargesPaise).toBe(9000); // 6000 + 3000
+    expect(refreshed.paidPaise).toBe(3000);
+    expect(refreshed.closingPaise).toBe(11000); // 5000 + 9000 - 3000
+
+    // 6. Dashboard: till-date outstanding and month-to-date collections.
+    const dash = await get('/dashboard');
+    expect(dash.status).toBe(200);
+    expect(dash.body.data.outstandingPaise).toBe(11000);
+    expect(dash.body.data.collectedPaise).toBe(3000);
+
+    // 7. Batch billing for the current month runs without errors.
+    const batch = await post('/bills/batch-generate', { month });
+    expect(batch.status).toBe(200);
+    expect(batch.body.data.errors).toEqual([]);
+    expect(batch.body.data.generated + batch.body.data.updated + batch.body.data.skipped).toBeGreaterThanOrEqual(1);
+  });
+
+  test('bill refresh preserves payments, waivers and debits already applied', async () => {
+    const month = today().slice(0, 7);
+    const date = today();
+    await post('/records/batch', {
+      items: [{ customer_id: String(customerDocA._id), date, shift: 'morning', type: 'cow', quantityMl: 1000 }]
+    });
+    const bill = (await post('/bills', { customer_id: String(customerDocA._id), month })).body.data; // 5000 + 6000 = 11000
+
+    // Ledger adjustments mutate closingPaise directly: waiver −2000, debit +1000.
+    const waiver = await request(app).post('/api/adjustments').set('Authorization', `Bearer ${tokenA}`)
+      .send({ customer_id: customerDocA._id, bill_id: bill._id, type: 'waiver', amountPaise: 2000, reason: 'Goodwill waiver for slow delivery week' });
+    expect(waiver.status).toBe(201);
+    const debit = await request(app).post('/api/adjustments').set('Authorization', `Bearer ${tokenA}`)
+      .send({ customer_id: customerDocA._id, bill_id: bill._id, type: 'debit', amountPaise: 1000, reason: 'Extra paneer order billed late' });
+    expect(debit.status).toBe(201);
+
+    // One more delivery, then refresh the bill.
+    await post('/records/batch', {
+      items: [{ customer_id: String(customerDocA._id), date, shift: 'evening', type: 'cow', quantityMl: 1000 }]
+    });
+    const refreshed = (await post('/bills', { customer_id: String(customerDocA._id), month })).body.data;
+    expect(refreshed.chargesPaise).toBe(12000);
+    // 5000 opening + 12000 charges − 0 paid − 2000 waiver + 1000 debit = 16000.
+    expect(refreshed.closingPaise).toBe(16000);
+  });
+
+  test('future months cannot be billed', async () => {
+    const single = await post('/bills', { customer_id: String(customerDocA._id), month: '2099-12' });
+    expect(single.status).toBe(409);
+    expect(single.body.error.code).toBe('FUTURE_MONTH');
+
+    const batch = await post('/bills/batch-generate', { month: '2099-12' });
+    expect(batch.status).toBe(409);
+    expect(batch.body.error.code).toBe('FUTURE_MONTH');
   });
 });
 

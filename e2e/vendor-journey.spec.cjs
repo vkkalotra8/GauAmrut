@@ -34,9 +34,9 @@ test('vendor registers, adds a customer, syncs offline milk, bills and records p
   await page.getByRole('link', { name: 'Bills & payments', exact: true }).click();
   await page.getByRole('button', { name: 'Generate single bill' }).click();
   await page.getByRole('dialog').getByRole('combobox', { name: 'Customer', exact: true }).selectOption({ label: 'Journey Customer' });
-  await page.getByLabel('Completed billing month').fill('2025-01');
-  await page.getByRole('button', { name: 'Confirm & finalize bill' }).click();
-  await expect(page.getByText(/Monthly bill finalized/)).toBeVisible();
+  await page.getByLabel('Billing month').fill('2025-01');
+  await page.getByRole('button', { name: 'Confirm & generate bill' }).click();
+  await expect(page.getByText(/Monthly bill generated/)).toBeVisible();
   await page.getByRole('button', { name: 'Record payment' }).click();
   await page.getByLabel('Amount received (₹)').fill('90');
   await page.getByRole('button', { name: 'Confirm payment received' }).click();

@@ -11,11 +11,11 @@ const { User, Customer, Record, Bill, Payment, Adjustment, Milkman, PaymentReque
 const { auth, vendor, validate, wrap, scope } = require('./middleware');
 const { AppError, today, csvCell, charge } = require('./domain');
 const schemas = require('./validation');
-const { enterDeliveries, generateBill, recordPayment } = require('./services');
+const { enterDeliveries, generateBill, recordPayment, outstandingByCustomer } = require('./services');
 const { accountsRoutes, change } = require('./accounts');
 const { runMonthlyBillingScheduler } = require('./billing-scheduler');
 const { createNotification, getNotifications, markRead, markAllRead } = require('./notifications');
-const { generateBillPdf } = require('./pdf');
+const { generateBillPdf, generateReportPdf, formatInr } = require('./pdf');
 const { platformSettings } = require('./settings');
 function createApp(redis) {
   const app = express();
@@ -52,19 +52,21 @@ function createApp(redis) {
   function validDate(value) { if (schemas.date.validate(value).error) throw new AppError(400, 'INVALID_DATE', 'Use a valid YYYY-MM-DD date.'); return value; }
   api.get('/dashboard', wrap(async (req, res) => {
     const date = today(), match = scope(req);
-    const [customerCount, activeCustomers, daily, monthly, debt, collected, recent, business] = await Promise.all([
+    const ledgerFilter = { milkman_id: req.tenant, ...(req.user.role === 'customer' ? { _id: req.user.customer_id } : {}) };
+    const [customerCount, activeCustomers, daily, monthly, outstanding, collected, recent, business] = await Promise.all([
       Customer.countDocuments({ milkman_id: req.tenant, ...(req.user.role === 'customer' ? { _id: req.user.customer_id } : {}) }),
       Customer.countDocuments({ milkman_id: req.tenant, status: 'active', ...(req.user.role === 'customer' ? { _id: req.user.customer_id } : {}) }),
       Record.aggregate([{ $match: { ...match, date, deleted: false } }, { $group: { _id: null, quantityMl: { $sum: '$quantityMl' }, totalPaise: { $sum: '$totalPaise' }, entries: { $sum: 1 } } }]),
       Record.aggregate([{ $match: { ...match, date: { $gte: date.slice(0, 7) + '-01', $lte: date }, deleted: false } }, { $group: { _id: '$date', totalPaise: { $sum: '$totalPaise' }, quantityMl: { $sum: '$quantityMl' } } }, { $sort: { _id: 1 } }]),
-      Bill.aggregate([{ $match: match }, { $group: { _id: null, total: { $sum: '$closingPaise' } } }]),
+      outstandingByCustomer(match, ledgerFilter),
       Payment.aggregate([{ $match: { ...match, deleted: false, createdAt: { $gte: new Date(date.slice(0, 7) + '-01T00:00:00+05:30') } } }, { $group: { _id: null, total: { $sum: '$amountPaise' } } }]),
       Record.find({ ...match, deleted: false }).sort({ createdAt: -1 }).limit(6).lean(),
       Milkman.findById(req.tenant).select('businessName code').lean()
     ]);
     const ids = recent.map(r => r.customer_id);
     const customers = await Customer.find({ _id: { $in: ids }, milkman_id: req.tenant }).select('name').lean();
-    ok(res, { date, customerCount, activeCustomers, today: daily[0] || { quantityMl: 0, totalPaise: 0, entries: 0 }, monthly, outstandingPaise: debt[0]?.total || 0, collectedPaise: collected[0]?.total || 0, recent: recent.map(r => ({ ...r, customerName: customers.find(c => String(c._id) === String(r.customer_id))?.name || 'Customer' })), businessName: business?.businessName });
+    const outstandingPaise = [...outstanding.values()].reduce((sum, v) => sum + v, 0);
+    ok(res, { date, customerCount, activeCustomers, today: daily[0] || { quantityMl: 0, totalPaise: 0, entries: 0 }, monthly, outstandingPaise, collectedPaise: collected[0]?.total || 0, recent: recent.map(r => ({ ...r, customerName: customers.find(c => String(c._id) === String(r.customer_id))?.name || 'Customer' })), businessName: business?.businessName });
   }));
   api.get('/customers', vendor, wrap(async (req, res) => {
     const pagination = page(req), q = String(req.query.q || '').slice(0, 100);
@@ -1137,11 +1139,7 @@ function createApp(redis) {
     const customers = await Customer.find({ milkman_id: req.tenant }).sort({ name: 1 }).lean();
     const business = await Milkman.findById(req.tenant).lean();
     const custIds = customers.map(c => c._id);
-    const bills = await Bill.aggregate([
-      { $match: { milkman_id: req.tenant, customer_id: { $in: custIds } } },
-      { $group: { _id: '$customer_id', totalClosing: { $sum: '$closingPaise' } } }
-    ]);
-    const billMap = new Map(bills.map(b => [String(b._id), b.totalClosing]));
+    const outstanding = await outstandingByCustomer({ milkman_id: req.tenant, customer_id: { $in: custIds } }, { milkman_id: req.tenant });
     const content = [
       ['Business', business?.businessName || 'GauAmrut Dairy'],
       ['Generated', new Date().toISOString()],
@@ -1154,7 +1152,7 @@ function createApp(redis) {
         c.status,
         c.cowRatePaise,
         c.buffaloRatePaise,
-        billMap.get(String(c._id)) || 0
+        outstanding.get(String(c._id)) || 0
       ])
     ].map(r => r.map(csvCell).join(',')).join('\r\n');
 
@@ -1171,6 +1169,118 @@ function createApp(redis) {
     const content = [['Business', business.businessName], ['Period', month], ['Generated', new Date().toISOString()], ['Currency', 'INR'], ['Date', 'Customer ID', 'Shift', 'Type', 'Quantity ml', 'Rate paise/L', 'Total paise'], ...rows.map(r => [r.date, r.customer_id, r.shift, r.type, r.quantityMl, r.ratePaise, r.totalPaise]), ['Total paise', rows.reduce((n, r) => n + r.totalPaise, 0)]].map(r => r.map(csvCell).join(',')).join('\r\n');
     res.set('Content-Disposition', `attachment; filename="gauamrut-deliveries-${month}.csv"`).type('text/csv').send(content);
   }));
+
+  const sendPdf = (res, buffer, filename) => res.set({
+    'Content-Type': 'application/pdf',
+    'Content-Disposition': `attachment; filename="${filename}"`,
+    'Content-Length': buffer.length
+  }).send(buffer);
+  const reportMonth = req => {
+    const month = req.query.month || today().slice(0, 7);
+    if (schemas.month.validate(month).error) throw new AppError(400, 'INVALID_MONTH', 'Use YYYY-MM for the report month.');
+    return month;
+  };
+  const cap = value => { const s = String(value || ''); return s.charAt(0).toUpperCase() + s.slice(1); };
+
+  api.get('/reports/deliveries.pdf', wrap(async (req, res) => {
+    const month = reportMonth(req);
+    const filter = { ...scope(req), deleted: false, date: { $gte: month + '-01', $lte: month + '-31' } };
+    if (await Record.countDocuments(filter) > 5000) throw new AppError(422, 'EXPORT_TOO_LARGE', 'This release supports up to 5,000 rows per export. Choose a smaller report period.');
+    const [rows, business, directory] = await Promise.all([
+      Record.find(filter).sort({ date: 1 }).lean(),
+      Milkman.findById(req.tenant).lean(),
+      Customer.find({ milkman_id: req.tenant }).select('name').lean()
+    ]);
+    const names = new Map(directory.map(c => [String(c._id), c.name]));
+    const pdf = await generateReportPdf({
+      title: 'Monthly delivery report',
+      dairyName: business?.businessName,
+      period: month,
+      subtitle: 'Every delivery, quantity, rate snapshot, and charge for the selected month.',
+      columns: [
+        { label: 'Date', width: 72 }, { label: 'Customer', width: 130 }, { label: 'Shift', width: 56 },
+        { label: 'Milk type', width: 56 }, { label: 'Qty (L)', width: 52, align: 'right' },
+        { label: 'Rate/L', width: 66, align: 'right' }, { label: 'Total', width: 67, align: 'right' }
+      ],
+      rows: rows.map(r => [r.date, names.get(String(r.customer_id)) || 'Customer', cap(r.shift), cap(r.type), (r.quantityMl / 1000).toFixed(3), formatInr(r.ratePaise), formatInr(r.totalPaise)]),
+      summary: [`${rows.length} delivery entries`, `Total charges: ${formatInr(rows.reduce((n, r) => n + r.totalPaise, 0))}`]
+    });
+    sendPdf(res, pdf, `gauamrut-deliveries-${month}.pdf`);
+  }));
+
+  api.get('/reports/payments.pdf', wrap(async (req, res) => {
+    const month = reportMonth(req);
+    const filter = { ...scope(req), deleted: false, createdAt: { $gte: new Date(month + '-01T00:00:00+05:30'), $lte: new Date(month + '-31T23:59:59+05:30') } };
+    const payments = await Payment.find(filter).sort({ createdAt: 1 }).lean();
+    const custIds = [...new Set(payments.map(p => String(p.customer_id)))];
+    const [customers, business] = await Promise.all([
+      Customer.find({ _id: { $in: custIds } }).select('name').lean(),
+      Milkman.findById(req.tenant).lean()
+    ]);
+    const names = new Map(customers.map(c => [String(c._id), c.name]));
+    const pdf = await generateReportPdf({
+      title: 'Payments & collections report',
+      dairyName: business?.businessName,
+      period: month,
+      subtitle: 'All customer payment receipts and balance ledgers for the selected month.',
+      columns: [
+        { label: 'Receipt', width: 92 }, { label: 'Date', width: 70 }, { label: 'Customer', width: 92 },
+        { label: 'Method', width: 50 }, { label: 'Reference', width: 85 }, { label: 'Reversed', width: 40 },
+        { label: 'Amount', width: 70, align: 'right' }
+      ],
+      rows: payments.map(p => [p.receipt || '-', new Date(p.createdAt).toLocaleDateString('en-IN'), names.get(String(p.customer_id)) || 'Customer', cap(p.method), p.reference || '-', p.reversed ? 'Yes' : 'No', formatInr(p.amountPaise)]),
+      summary: [`Total received: ${formatInr(payments.filter(p => !p.reversed).reduce((sum, p) => sum + p.amountPaise, 0))}`, `${payments.length} payment records`]
+    });
+    sendPdf(res, pdf, `gauamrut-payments-${month}.pdf`);
+  }));
+
+  api.get('/reports/orders.pdf', wrap(async (req, res) => {
+    const month = reportMonth(req);
+    const filter = { ...scope(req), deliveryDate: { $gte: month + '-01', $lte: month + '-31' } };
+    const orders = await Order.find(filter).sort({ deliveryDate: 1 }).lean();
+    const custIds = [...new Set(orders.map(o => String(o.customer_id)))];
+    const [customers, business] = await Promise.all([
+      Customer.find({ _id: { $in: custIds } }).select('name').lean(),
+      Milkman.findById(req.tenant).lean()
+    ]);
+    const names = new Map(customers.map(c => [String(c._id), c.name]));
+    const pdf = await generateReportPdf({
+      title: 'Store product orders report',
+      dairyName: business?.businessName,
+      period: month,
+      subtitle: 'Monthly orders, customer details, line items, fulfilment status, and collected values.',
+      columns: [
+        { label: 'Date', width: 70 }, { label: 'Customer', width: 100 }, { label: 'Shift', width: 50 },
+        { label: 'Items', width: 179 }, { label: 'Total', width: 60, align: 'right' }, { label: 'Status', width: 40 }
+      ],
+      rows: orders.map(o => [o.deliveryDate, names.get(String(o.customer_id)) || 'Customer', cap(o.shift), o.items.map(i => `${i.name} (${i.quantity} ${i.unit})`).join('; '), formatInr(o.totalPaise), cap(o.status)]),
+      summary: [`Order value: ${formatInr(orders.filter(o => o.status !== 'cancelled').reduce((sum, o) => sum + o.totalPaise, 0))}`, `${orders.length} orders`]
+    });
+    sendPdf(res, pdf, `gauamrut-orders-${month}.pdf`);
+  }));
+
+  api.get('/reports/customer-summary.pdf', wrap(async (req, res) => {
+    const customers = await Customer.find({ milkman_id: req.tenant, ...(req.user.role === 'customer' ? { _id: req.user.customer_id } : {}) }).sort({ name: 1 }).lean();
+    const custIds = customers.map(c => c._id);
+    const [business, outstanding] = await Promise.all([
+      Milkman.findById(req.tenant).lean(),
+      outstandingByCustomer({ milkman_id: req.tenant, customer_id: { $in: custIds } }, { milkman_id: req.tenant })
+    ]);
+    const pdf = await generateReportPdf({
+      title: 'Customer directory summary',
+      dairyName: business?.businessName,
+      subtitle: 'Complete customer roster, service status, rates, route sequences, and phone numbers.',
+      columns: [
+        { label: 'Customer', width: 100 }, { label: 'Phone', width: 70 }, { label: 'Address', width: 120 },
+        { label: 'Status', width: 42 }, { label: 'Cow Rs/L', width: 55 }, { label: 'Buffalo Rs/L', width: 55 },
+        { label: 'Outstanding', width: 57, align: 'right' }
+      ],
+      rows: customers.map(c => [c.name, c.phone || '-', c.address || '-', cap(c.status), formatInr(c.cowRatePaise), formatInr(c.buffaloRatePaise), formatInr(outstanding.get(String(c._id)) || 0)]),
+      summary: [`${customers.length} customers`, `Total outstanding: ${formatInr([...outstanding.values()].reduce((n, v) => n + v, 0))}`]
+    });
+    sendPdf(res, pdf, 'gauamrut-customers-summary.pdf');
+  }));
+
   app.use('/api', api);
   app.use((_req, _res, next) => next(new AppError(404, 'NOT_FOUND', 'Endpoint was not found.')));
   app.use((error, req, res, _next) => {

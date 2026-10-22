@@ -70,7 +70,7 @@ function describeAction(row) {
     case 'admin.user.role.updated': return `changed ${targetLabel ? `“${targetLabel}”` : 'a user'}’s admin role to ${roleLabel(after?.adminRole)}`;
     case 'admin.dairy.verified.updated': return `${after?.verified ? 'verified' : 'unverified'} the dairy ${targetLabel ? `“${targetLabel}”` : 'in the directory'}`;
     case 'admin.dispute.updated': return `updated the dispute${targetLabel ? ` for “${targetLabel}”` : ''}`;
-    case 'billing.scheduler.run': return `finalised bills for ${after?.month || target}${after ? ` (${after.generated ?? 0} generated, ${after.skipped ?? 0} skipped)` : ''}`;
+    case 'billing.scheduler.run': return `generated bills for ${after?.month || target}${after ? ` (${after.generated ?? 0} generated, ${after.updated ?? 0} updated, ${after.skipped ?? 0} skipped)` : ''}`;
     case 'customer.registered': return 'joined through a dairy sign-up link';
     case 'customer.history.claimed': return 'claimed their past bill history';
     case 'customer.created': return 'added a customer to their dairy';

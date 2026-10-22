@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const mongoose = require('mongoose');
 const { DistributedLock, Milkman, Customer, Bill, Record, Audit } = require('./models');
 const { AppError, today } = require('./domain');
+const { refreshBilledMonths } = require('./services');
 
 async function acquireLock(lockKey, leaseMs = 60000, workerId = crypto.randomUUID()) {
   const now = new Date();
@@ -38,8 +39,8 @@ function getPreviousMonth(referenceDate = today()) {
 
 async function runMonthlyBillingScheduler({ month, milkmanId, workerId = crypto.randomUUID(), actorId } = {}) {
   const targetMonth = month || getPreviousMonth();
-  if (targetMonth >= today().slice(0, 7)) {
-    throw new AppError(409, 'MONTH_OPEN', 'Bills can be finalized only after the month ends.');
+  if (targetMonth > today().slice(0, 7)) {
+    throw new AppError(409, 'FUTURE_MONTH', 'Bills cannot be generated for a month that has not started yet.');
   }
 
   const lockKey = `billing_scheduler_${milkmanId ? milkmanId + '_' : ''}${targetMonth}`;
@@ -48,7 +49,7 @@ async function runMonthlyBillingScheduler({ month, milkmanId, workerId = crypto.
     throw new AppError(409, 'SCHEDULER_LOCKED', 'Monthly billing scheduler is already executing for this period.');
   }
 
-  const summary = { targetMonth, generated: 0, skipped: 0, errors: [] };
+  const summary = { targetMonth, generated: 0, updated: 0, skipped: 0, errors: [] };
 
   try {
     const milkmen = milkmanId
@@ -65,7 +66,11 @@ async function runMonthlyBillingScheduler({ month, milkmanId, workerId = crypto.
             await session.withTransaction(async () => {
               const existing = await Bill.findOne({ milkman_id: m._id, customer_id: c._id, month: targetMonth }).session(session);
               if (existing) {
-                summary.skipped += 1;
+                // Refresh existing bills so entries and carry-forward made after
+                // generation are reflected without waiting for the month to end.
+                const result = await refreshBilledMonths(session, { milkmanId: m._id, customerId: c._id, fromMonth: targetMonth, fallbackOpening: c.openingBalancePaise || 0 });
+                if (result?.changed) summary.updated += 1;
+                else summary.skipped += 1;
                 return;
               }
 
@@ -112,7 +117,7 @@ async function runMonthlyBillingScheduler({ month, milkmanId, workerId = crypto.
           actor: actorId,
           action: 'billing.scheduler.run',
           target: targetMonth,
-          after: { generated: summary.generated, skipped: summary.skipped, month: targetMonth }
+          after: { generated: summary.generated, updated: summary.updated, skipped: summary.skipped, month: targetMonth }
         }]);
       }
     }

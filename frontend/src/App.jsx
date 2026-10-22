@@ -60,7 +60,7 @@ function useIsMobile() {
 function Dashboard() {
   const session = useSelector(s => s.session); const resource = useData('/dashboard', demoDashboard), navigate = useNavigate(); const data = resource.data; const isMobile = useIsMobile();
   const formattedDate = new Intl.DateTimeFormat('en-IN', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Kolkata' }).format(new Date());
-  return <><Heading title={`A fresh day, ${session.user.name.split(' ')[0]}.`} description="Here’s how your dairy is doing. Let’s make today a good one."><span className="date-chip"><Sun size={17}/>{formattedDate}</span></Heading><State resource={resource}>{data && <><section className="welcome-banner"><div><span className="eyebrow">A LITTLE CARE. EVERY SINGLE DAY.</span><h2>Good milk. Happy homes.</h2><p>Keep your deliveries flowing and your business growing.</p><button className="button" onClick={() => navigate('/records')}>Start today’s entry <ArrowRight size={17}/></button></div><div className="banner-art" aria-hidden="true"><div className="sun-disc"/><div className="hill hill-back"/><div className="hill hill-front"/><div className="mini-bottle"><Droplets size={30}/><span>fresh daily</span></div><Leaf size={78} className="banner-leaf"/></div></section><div className="stats-grid">{[{ title: 'Today’s milk', value: <AnimatedNumber value={data.today.quantityMl / 1000} format={n => `${Math.round(n * 10) / 10} L`}/>, note: `${data.today.entries} delivery entries recorded`, icon: Droplets, color: 'green' }, { title: 'Active customers', value: <AnimatedNumber value={data.activeCustomers}/>, note: `${data.customerCount} customers in your dairy`, icon: Users, color: 'blue' }, { title: 'Collected this month', value: <AnimatedNumber value={data.collectedPaise} format={money}/>, note: 'Payments received & recorded', icon: Wallet, color: 'gold' }, { title: 'Outstanding balance', value: <AnimatedNumber value={data.outstandingPaise} format={money}/>, note: 'Across finalized monthly bills', icon: ArrowUpRight, color: 'orange' }].map((s, i) => <motion.article className="stat-card" key={s.title} initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 + i * 0.06, duration: 0.35, ease: 'easeOut' }}><div className="stat-top"><span>{s.title}</span><span className={`stat-icon ${s.color}`}><s.icon size={20}/></span></div><strong>{s.value}</strong><small>{s.note}</small></motion.article>)}</div><div className="dashboard-grid"><section className="card"><div className="card-heading"><div><h2>Milk delivery overview</h2><p>Your daily volume this month</p></div><span className="pill"><span className="dot"/> Litres delivered</span></div>{data.monthly.length ? <MilkTrend monthly={data.monthly}/> : <Empty>Record your first delivery to see the month take shape.</Empty>}<div className="chart-footer"><span>Total this month <b>{data.monthly.reduce((n, d) => n + d.quantityMl, 0) / 1000} L</b></span><span>Delivery value <b>{money(data.monthly.reduce((n, d) => n + d.totalPaise, 0))}</b></span></div></section><section className="card quick-card"><div className="card-heading"><div><h2>A little less clicking</h2><p>Your everyday essentials</p></div></div>{[{ icon: Plus, title: 'Add a customer', sub: 'Welcome another happy home', to: '/customers?add=1' }, { icon: Droplets, title: 'Record milk delivery', sub: 'Fresh milk, accurately recorded', to: '/records' }, { icon: Wallet, title: 'Collect a payment', sub: 'Keep your books up to date', to: '/payments' }, { icon: Download, title: 'Download a report', sub: 'Your numbers, ready to share', to: '/reports' }].map(a => <button className="quick-action" key={a.title} onClick={() => navigate(a.to)}><span className="quick-icon"><a.icon size={20}/></span><span><b>{a.title}</b><small>{a.sub}</small></span><ChevronRight size={17}/></button>)}</section></div><section className="card recent-card"><div className="card-heading"><div><h2>Fresh off the route</h2><p>Your most recent milk deliveries</p></div><button className="text-button" onClick={() => navigate('/records')}>View all records <ArrowRight size={16}/></button></div><DeliveryTable rows={data.recent}/></section><div className="page-footnote"><Leaf size={15}/> Bringing a little more simplicity to every dairy day.</div></>}{isMobile && !session.demo && <button className="fab" aria-label="Record milk delivery" onClick={() => navigate('/records')}><Plus size={24}/></button>}</State></>;
+  return <><Heading title={`A fresh day, ${session.user.name.split(' ')[0]}.`} description="Here’s how your dairy is doing. Let’s make today a good one."><span className="date-chip"><Sun size={17}/>{formattedDate}</span></Heading><State resource={resource}>{data && <><section className="welcome-banner"><div><span className="eyebrow">A LITTLE CARE. EVERY SINGLE DAY.</span><h2>Good milk. Happy homes.</h2><p>Keep your deliveries flowing and your business growing.</p><button className="button" onClick={() => navigate('/records')}>Start today’s entry <ArrowRight size={17}/></button></div><div className="banner-art" aria-hidden="true"><div className="sun-disc"/><div className="hill hill-back"/><div className="hill hill-front"/><div className="mini-bottle"><Droplets size={30}/><span>fresh daily</span></div><Leaf size={78} className="banner-leaf"/></div></section><div className="stats-grid">{[{ title: 'Today’s milk', value: <AnimatedNumber value={data.today.quantityMl / 1000} format={n => `${Math.round(n * 10) / 10} L`}/>, note: `${data.today.entries} delivery entries recorded`, icon: Droplets, color: 'green' }, { title: 'Active customers', value: <AnimatedNumber value={data.activeCustomers}/>, note: `${data.customerCount} customers in your dairy`, icon: Users, color: 'blue' }, { title: 'Collected this month', value: <AnimatedNumber value={data.collectedPaise} format={money}/>, note: 'Payments received & recorded', icon: Wallet, color: 'gold' }, { title: 'Outstanding balance', value: <AnimatedNumber value={data.outstandingPaise} format={money}/>, note: 'For milk delivered till date', icon: ArrowUpRight, color: 'orange' }].map((s, i) => <motion.article className="stat-card" key={s.title} initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 + i * 0.06, duration: 0.35, ease: 'easeOut' }}><div className="stat-top"><span>{s.title}</span><span className={`stat-icon ${s.color}`}><s.icon size={20}/></span></div><strong>{s.value}</strong><small>{s.note}</small></motion.article>)}</div><div className="dashboard-grid"><section className="card"><div className="card-heading"><div><h2>Milk delivery overview</h2><p>Your daily volume this month</p></div><span className="pill"><span className="dot"/> Litres delivered</span></div>{data.monthly.length ? <MilkTrend monthly={data.monthly}/> : <Empty>Record your first delivery to see the month take shape.</Empty>}<div className="chart-footer"><span>Total this month <b>{data.monthly.reduce((n, d) => n + d.quantityMl, 0) / 1000} L</b></span><span>Delivery value <b>{money(data.monthly.reduce((n, d) => n + d.totalPaise, 0))}</b></span></div></section><section className="card quick-card"><div className="card-heading"><div><h2>A little less clicking</h2><p>Your everyday essentials</p></div></div>{[{ icon: Plus, title: 'Add a customer', sub: 'Welcome another happy home', to: '/customers?add=1' }, { icon: Droplets, title: 'Record milk delivery', sub: 'Fresh milk, accurately recorded', to: '/records' }, { icon: Wallet, title: 'Collect a payment', sub: 'Keep your books up to date', to: '/payments' }, { icon: Download, title: 'Download a report', sub: 'Your numbers, ready to share', to: '/reports' }].map(a => <button className="quick-action" key={a.title} onClick={() => navigate(a.to)}><span className="quick-icon"><a.icon size={20}/></span><span><b>{a.title}</b><small>{a.sub}</small></span><ChevronRight size={17}/></button>)}</section></div><section className="card recent-card"><div className="card-heading"><div><h2>Fresh off the route</h2><p>Your most recent milk deliveries</p></div><button className="text-button" onClick={() => navigate('/records')}>View all records <ArrowRight size={16}/></button></div><DeliveryTable rows={data.recent}/></section><div className="page-footnote"><Leaf size={15}/> Bringing a little more simplicity to every dairy day.</div></>}{isMobile && !session.demo && <button className="fab" aria-label="Record milk delivery" onClick={() => navigate('/records')}><Plus size={24}/></button>}</State></>;
 }
 function DeliveryTable({ rows, customers = [] }) { return rows.length ? <div className="table-scroll"><table><thead><tr><th>Customer</th><th>Service date</th><th>Milk & shift</th><th>Quantity</th><th>Amount</th><th>Status</th></tr></thead><tbody>{rows.map(r => <tr key={r._id}><td><span className="person"><span className="avatar">{(r.customerName || customers.find(c => c._id === r.customer_id)?.name || 'C').slice(0, 1)}</span><b>{r.customerName || customers.find(c => c._id === r.customer_id)?.name || 'Customer'}</b></span></td><td>{r.date}</td><td className="capitalize">{r.type} · {r.shift}</td><td>{r.quantityMl / 1000} L</td><td>{money(r.totalPaise)}</td><td><span className="status"><Check size={12}/> Recorded</span></td></tr>)}</tbody></table></div> : <Empty>No deliveries yet. Add a customer, then start your route.</Empty>; }
 function Customers() {
@@ -120,7 +120,7 @@ function Reports() {
         endpoint = `/reports/deliveries.csv?month=${month}`;
         filename = `gauamrut-deliveries-${month}.csv`;
       } else if (type === 'payments') {
-        endpoint = `/reports/payments.csv?startDate=${month}-01&endDate=${month}-31`;
+        endpoint = `/reports/payments.csv?month=${month}`;
         filename = `gauamrut-payments-${month}.csv`;
       } else if (type === 'customers') {
         endpoint = `/reports/customer-summary.csv`;
@@ -128,6 +128,18 @@ function Reports() {
       } else if (type === 'orders') {
         endpoint = `/reports/orders.csv?month=${month}`;
         filename = `gauamrut-orders-${month}.csv`;
+      } else if (type === 'deliveries-pdf') {
+        endpoint = `/reports/deliveries.pdf?month=${month}`;
+        filename = `gauamrut-deliveries-${month}.pdf`;
+      } else if (type === 'payments-pdf') {
+        endpoint = `/reports/payments.pdf?month=${month}`;
+        filename = `gauamrut-payments-${month}.pdf`;
+      } else if (type === 'customers-pdf') {
+        endpoint = `/reports/customer-summary.pdf`;
+        filename = `gauamrut-customers-summary.pdf`;
+      } else if (type === 'orders-pdf') {
+        endpoint = `/reports/orders.pdf?month=${month}`;
+        filename = `gauamrut-orders-${month}.pdf`;
       }
       const r = await api.get(endpoint, { responseType: 'blob' });
       const url = URL.createObjectURL(r.data);
@@ -153,9 +165,14 @@ function Reports() {
         <h2>Monthly delivery report</h2>
         <p>Every delivery, quantity, rate snapshot, and charge for the selected month in paise.</p>
         <Field label="Reporting month" type="month" value={month} onChange={e => setMonth(e.target.value)}/>
-        <button className="button primary" disabled={Boolean(busyReport) || !month} onClick={() => download('deliveries')}>
-          <Download size={17}/>{busyReport === 'deliveries' ? 'Preparing report…' : 'Download Deliveries CSV'}
-        </button>
+        <div className="heading-actions">
+          <button className="button primary" disabled={Boolean(busyReport) || !month} onClick={() => download('deliveries')}>
+            <Download size={17}/>{busyReport === 'deliveries' ? 'Preparing report…' : 'Download Deliveries CSV'}
+          </button>
+          <button className="button" disabled={Boolean(busyReport) || !month} onClick={() => download('deliveries-pdf')}>
+            <Download size={17}/>{busyReport === 'deliveries-pdf' ? 'Preparing PDF…' : 'Download PDF'}
+          </button>
+        </div>
       </section>
 
       <section className="card report-card">
@@ -163,9 +180,14 @@ function Reports() {
         <h2>Payments & collections report</h2>
         <p>All finalized bills, customer payment receipts, and balance ledgers for the selected month.</p>
         <Field label="Reporting month" type="month" value={month} onChange={e => setMonth(e.target.value)}/>
-        <button className="button primary" disabled={Boolean(busyReport) || !month} onClick={() => download('payments')}>
-          <Download size={17}/>{busyReport === 'payments' ? 'Preparing report…' : 'Download Payments CSV'}
-        </button>
+        <div className="heading-actions">
+          <button className="button primary" disabled={Boolean(busyReport) || !month} onClick={() => download('payments')}>
+            <Download size={17}/>{busyReport === 'payments' ? 'Preparing report…' : 'Download Payments CSV'}
+          </button>
+          <button className="button" disabled={Boolean(busyReport) || !month} onClick={() => download('payments-pdf')}>
+            <Download size={17}/>{busyReport === 'payments-pdf' ? 'Preparing PDF…' : 'Download PDF'}
+          </button>
+        </div>
       </section>
 
       <section className="card report-card">
@@ -175,9 +197,14 @@ function Reports() {
         <div className="report-note">
           <small>Includes all active and inactive customer accounts.</small>
         </div>
-        <button className="button primary" disabled={Boolean(busyReport)} onClick={() => download('customers')}>
-          <Download size={17}/>{busyReport === 'customers' ? 'Preparing report…' : 'Download Customers CSV'}
-        </button>
+        <div className="heading-actions">
+          <button className="button primary" disabled={Boolean(busyReport)} onClick={() => download('customers')}>
+            <Download size={17}/>{busyReport === 'customers' ? 'Preparing report…' : 'Download Customers CSV'}
+          </button>
+          <button className="button" disabled={Boolean(busyReport)} onClick={() => download('customers-pdf')}>
+            <Download size={17}/>{busyReport === 'customers-pdf' ? 'Preparing PDF…' : 'Download PDF'}
+          </button>
+        </div>
       </section>
 
       <section className="card report-card">
@@ -185,9 +212,14 @@ function Reports() {
         <h2>Store product orders report</h2>
         <p>Monthly orders, customer details, line items, fulfilment status, and collected values.</p>
         <Field label="Reporting month" type="month" value={month} onChange={e => setMonth(e.target.value)}/>
-        <button className="button primary" disabled={Boolean(busyReport) || !month} onClick={() => download('orders')}>
-          <Download size={17}/>{busyReport === 'orders' ? 'Preparing report…' : 'Download Orders CSV'}
-        </button>
+        <div className="heading-actions">
+          <button className="button primary" disabled={Boolean(busyReport) || !month} onClick={() => download('orders')}>
+            <Download size={17}/>{busyReport === 'orders' ? 'Preparing report…' : 'Download Orders CSV'}
+          </button>
+          <button className="button" disabled={Boolean(busyReport) || !month} onClick={() => download('orders-pdf')}>
+            <Download size={17}/>{busyReport === 'orders-pdf' ? 'Preparing PDF…' : 'Download PDF'}
+          </button>
+        </div>
       </section>
     </div>
   </>;

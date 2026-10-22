@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { Plus, Check, Search, Receipt, AlertCircle, FileText, CheckCircle2, XCircle, Printer, RotateCcw, Download } from 'lucide-react';
 import { CollectionsDonut } from '../../components/charts';
 import { Heading, Notice, State, Empty, Modal, Field } from '../../components/ui';
-import { api, money, message, decimalUnits } from '../../lib';
+import { api, money, message, decimalUnits, serviceDate } from '../../lib';
 import useData from '../../hooks/useData';
 import { usePlatformSettings } from '../../platform';
 import { demoBills, demoCustomers, demoClaims, demoAdjustments, demoPayments } from '../../demo';
@@ -50,10 +50,12 @@ export default function Payments() {
     setError('');
     try {
       const res = await api.post('/bills/batch-generate', {});
+      const d = res.data.data;
       setNotice(t('payments.batchSuccess', {
-        generated: res.data.data.generated,
-        skipped: res.data.data.skipped,
-        defaultValue: `Batch billing finished: ${res.data.data.generated} bills generated, ${res.data.data.skipped} skipped.`
+        generated: d.generated,
+        updated: d.updated ?? 0,
+        skipped: d.skipped,
+        defaultValue: `Batch billing finished: ${d.generated} bills generated, ${d.updated ?? 0} updated, ${d.skipped} skipped.`
       }));
       bills.reload();
     } catch (e) {
@@ -75,7 +77,7 @@ export default function Payments() {
       const f = Object.fromEntries(new FormData(e.currentTarget));
       const body = modal === 'bill' ? f : { bill_id: modal._id, amountPaise: decimalUnits(f.amount), method: f.method, ...(f.reference ? { reference: f.reference } : {}) };
       const r = await api.post(modal === 'bill' ? '/bills' : '/payments', body, { headers: { 'Idempotency-Key': key } });
-      setNotice(modal === 'bill' ? t('payments.billFinalized', 'Monthly bill finalized with carry-forward accounting.') : `${t('payments.paymentRecorded', 'Payment recorded.')} ${t('payments.receiptLabel', 'Receipt')}: ${r.data.data.receipt}`);
+      setNotice(modal === 'bill' ? t('payments.billFinalized', 'Monthly bill generated with carry-forward accounting. It refreshes whenever entries change.') : `${t('payments.paymentRecorded', 'Payment recorded.')} ${t('payments.receiptLabel', 'Receipt')}: ${r.data.data.receipt}`);
       setModal(null);
       bills.reload();
       payments.reload();
@@ -725,12 +727,12 @@ export default function Payments() {
 
       {/* Bill & Payment Modal */}
       {modal && (
-        <Modal title={modal === 'bill' ? t('payments.finalizeBillTitle', 'Finalize a monthly bill') : t('payments.recordPaymentTitle', 'Record a payment')} close={() => setModal(null)}>
+        <Modal title={modal === 'bill' ? t('payments.finalizeBillTitle', 'Generate a monthly bill') : t('payments.recordPaymentTitle', 'Record a payment')} close={() => { setModal(null); setError(''); }}>
           <form onSubmit={save} onChange={() => setKey('pay-' + Math.floor(Math.random() * 1000000000))}>
             {modal === 'bill' ? (
               <>
                 <p className="form-note">
-                  {t('payments.carryForwardNote', 'Finalizing locks delivery entries. Unpaid balance from the prior month automatically rolls into opening balance.')}
+                  {t('payments.carryForwardNote', 'Bills can be generated at any time and refresh with your latest deliveries. Unpaid balance from the prior month rolls into the opening balance.')}
                 </p>
                 <label className="field">
                   <span>{t('payments.selectCustomer', 'Customer')}</span>
@@ -741,7 +743,7 @@ export default function Payments() {
                     ))}
                   </select>
                 </label>
-                <Field label={t('payments.billingMonthLabel', 'Completed billing month')} name="month" type="month" required />
+                <Field label={t('payments.billingMonthLabel', 'Billing month')} name="month" type="month" max={serviceDate().slice(0, 7)} required />
               </>
             ) : (
               <>
@@ -762,7 +764,7 @@ export default function Payments() {
             )}
             {error && <Notice error>{error}</Notice>}
             <button className="button primary full" disabled={busy}>
-              {busy ? t('common.saving', 'Saving…') : modal === 'bill' ? t('payments.confirmBill', 'Confirm & finalize bill') : t('payments.confirmPayment', 'Confirm payment received')}
+              {busy ? t('common.saving', 'Saving…') : modal === 'bill' ? t('payments.confirmBill', 'Confirm & generate bill') : t('payments.confirmPayment', 'Confirm payment received')}
             </button>
           </form>
         </Modal>

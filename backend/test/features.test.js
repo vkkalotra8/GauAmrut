@@ -1,10 +1,32 @@
 const request = require('supertest');
 const mongoose = require('mongoose');
+const zlib = require('zlib');
 const { MongoMemoryReplSet } = require('mongodb-memory-server');
 const { createApp } = require('../src/app');
 const { User, Milkman, Customer, Bill, Payment, Record, Dispute, DeliveryAdjustment, Notification, AdminSetting } = require('../src/models');
 const { createNotification } = require('../src/notifications');
+const { pdfText } = require('../src/pdf');
 const jwt = require('jsonwebtoken');
+
+// Recovers the visible text of a pdfkit document by inflating its content
+// streams and decoding the PDF string arrays (pdfkit writes text as hex/literal
+// chunks inside TJ operators), so assertions can check headings and names.
+function decodePdfChunk(chunk) {
+  if (chunk.startsWith('<')) return Buffer.from(chunk.slice(1, -1).replace(/\s+/g, ''), 'hex').toString('latin1');
+  return chunk.slice(1, -1).replace(/\\([0-7]{1,3}|.)/g, (_, esc) => (/^[0-7]+$/.test(esc) ? String.fromCharCode(parseInt(esc, 8)) : ({ n: '\n', r: '\r', t: '\t' }[esc] ?? esc)));
+}
+function pdfContent(buf) {
+  const raw = buf.toString('latin1');
+  const re = /stream\r?\n([\s\S]*?)endstream/g;
+  let out = '', m;
+  while ((m = re.exec(raw))) {
+    try { out += zlib.inflateSync(Buffer.from(m[1].replace(/\r?\n$/, ''), 'latin1')).toString('latin1'); } catch { /* non-deflate stream */ }
+  }
+  return out
+    .replace(/\[((?:\((?:\\[\s\S]|[^()\\])*\)|<[0-9A-Fa-f\s]*>|[-\d.]|\s)*)\]\s*TJ/g, (_, inner) =>
+      (inner.match(/\((?:\\[\s\S]|[^()\\])*\)|<[0-9A-Fa-f\s]*>/g) || []).map(decodePdfChunk).join(''))
+    .replace(/(\((?:\\[\s\S]|[^()\\])*\)|<[0-9A-Fa-f\s]*>)\s*Tj/g, (_, chunk) => decodePdfChunk(chunk));
+}
 
 process.env.JWT_SECRET = '12345678901234567890123456789012';
 process.env.CORS_ORIGINS = 'http://127.0.0.1:5173';
@@ -220,6 +242,14 @@ describe('New SRS Features Integration Tests', () => {
   });
 
   describe('PDF Generation & Additional CSV Reports', () => {
+    it('sanitises emoji and unsupported symbols for standard PDF fonts', () => {
+      expect(pdfText('Jay Dwarkadish 💜')).toBe('Jay Dwarkadish');
+      expect(pdfText('Café Müller')).toBe('Café Müller');
+      expect(pdfText('  spaced   out  ')).toBe('spaced out');
+      expect(pdfText('', 'Fallback')).toBe('Fallback');
+      expect(pdfText('Milk ₹100 & Co')).toBe('Milk 100 & Co'); // ₹ has no WinAnsi glyph
+    });
+
     it('generates PDF invoice buffer for a monthly bill', async () => {
       const res = await request(app)
         .get(`/api/bills/${testBill._id}/pdf`)
@@ -229,6 +259,51 @@ describe('New SRS Features Integration Tests', () => {
       expect(res.headers['content-type']).toBe('application/pdf');
       expect(res.body).toBeInstanceOf(Buffer);
       expect(res.body.length).toBeGreaterThan(500);
+    });
+
+    it('heads the bill PDF with the dairy name, watermarks GauAmrut, and strips emoji from names', async () => {
+      await Customer.updateOne({ _id: customerDoc._id }, { name: 'Ramesh 😀 Patel' });
+      try {
+        const res = await request(app)
+          .get(`/api/bills/${testBill._id}/pdf`)
+          .set('Authorization', `Bearer ${vendorToken}`);
+
+        expect(res.status).toBe(200);
+        const content = pdfContent(res.body);
+        expect(content).toContain('GauAmrut Organic Farm'); // dairy name is the heading
+        expect(content).not.toContain('GAUAMRUT'); // the old fixed heading is gone
+        expect((content.match(/GauAmrut/g) || []).length).toBeGreaterThanOrEqual(3); // heading + footer + watermark
+        expect(content).toContain('Ramesh Patel'); // emoji stripped, not rendered as mojibake
+      } finally {
+        await Customer.updateOne({ _id: customerDoc._id }, { name: 'Ramesh Patel' });
+      }
+    });
+
+    it('exports the monthly delivery report as a branded PDF', async () => {
+      const res = await request(app)
+        .get('/api/reports/deliveries.pdf?month=2026-08')
+        .set('Authorization', `Bearer ${vendorToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.headers['content-type']).toBe('application/pdf');
+      expect(res.body).toBeInstanceOf(Buffer);
+      const content = pdfContent(res.body);
+      expect(content).toContain('GauAmrut Organic Farm');
+      expect(content).toContain('Monthly delivery report');
+      expect((content.match(/GauAmrut/g) || []).length).toBeGreaterThanOrEqual(3); // heading + footer + watermark
+    });
+
+    it('exports payments, orders and customer summary PDFs', async () => {
+      for (const path of ['/api/reports/payments.pdf?month=2026-08', '/api/reports/orders.pdf?month=2026-08', '/api/reports/customer-summary.pdf']) {
+        const res = await request(app)
+          .get(path)
+          .set('Authorization', `Bearer ${vendorToken}`);
+
+        expect(res.status).toBe(200);
+        expect(res.headers['content-type']).toBe('application/pdf');
+        expect(res.body).toBeInstanceOf(Buffer);
+        expect(res.body.length).toBeGreaterThan(500);
+      }
     });
 
     it('exports payments CSV report', async () => {

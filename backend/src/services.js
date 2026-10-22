@@ -1,6 +1,6 @@
 const mongoose = require('mongoose');
 const crypto = require('crypto');
-const { Customer, Record, Bill, Payment, Idempotency, Audit } = require('./models');
+const { Customer, Record, Bill, Payment, Adjustment, Idempotency, Audit } = require('./models');
 const { AppError, charge, fingerprint, eligible, today } = require('./domain');
 async function writeOnce(req, operation) {
   const key = req.get('Idempotency-Key');
@@ -42,7 +42,10 @@ async function enterDeliveries(req) {
       const customer = await Customer.findOne({ _id: item.customer_id, milkman_id: req.tenant }).session(session);
       if (!customer) throw new AppError(404, 'NOT_FOUND', 'Customer was not found.');
       if (!eligible(customer, item.date) || item.date > today()) throw new AppError(409, 'INELIGIBLE_DELIVERY', 'Customer is not eligible on this service date, or the date is in the future.');
-      if (await Bill.exists({ milkman_id: req.tenant, customer_id: customer._id, month: { $gte: item.date.slice(0, 7) } }).session(session)) throw new AppError(409, 'PERIOD_CLOSED', 'This period has been billed. Corrections require a future adjustment workflow.');
+      const recordMonth = item.date.slice(0, 7);
+      // Closed months stay billed-only; the current month keeps accepting entries
+      // even after a mid-month bill (the bill refreshes on regeneration).
+      if (recordMonth < today().slice(0, 7) && await Bill.exists({ milkman_id: req.tenant, customer_id: customer._id, month: { $gte: recordMonth } }).session(session)) throw new AppError(409, 'PERIOD_CLOSED', 'This period has been billed. Corrections require a future adjustment workflow.');
       // Touch the customer to serialize billing, lifecycle updates and delivery writes.
       await Customer.updateOne({ _id: customer._id }, { $inc: { __v: 1 } }, { session });
       const ratePaise = item.type === 'cow' ? customer.cowRatePaise : customer.buffaloRatePaise;
@@ -66,11 +69,17 @@ async function enterDeliveries(req) {
 async function generateBill(req) {
   return writeOnce(req, async session => {
     const { customer_id, month } = req.body;
-    if (month >= today().slice(0, 7)) throw new AppError(409, 'MONTH_OPEN', 'Bills can be finalized only after the month ends.');
+    if (month > today().slice(0, 7)) throw new AppError(409, 'FUTURE_MONTH', 'Bills cannot be generated for a month that has not started yet.');
     const customer = await Customer.findOne({ _id: customer_id, milkman_id: req.tenant }).session(session);
     if (!customer) throw new AppError(404, 'NOT_FOUND', 'Customer was not found.');
     const existing = await Bill.findOne({ milkman_id: req.tenant, customer_id, month }).session(session);
-    if (existing) return existing.toObject();
+    if (existing) {
+      // A bill always mirrors the ledger: regenerate to pick up new or corrected
+      // entries and any carry-forward changes, keeping payments already applied.
+      await refreshBilledMonths(session, { milkmanId: req.tenant, customerId: customer_id, fromMonth: month, fallbackOpening: customer.openingBalancePaise || 0 });
+      const refreshed = await Bill.findOne({ _id: existing._id }).session(session);
+      return refreshed.toObject();
+    }
     await Customer.updateOne({ _id: customer._id }, { $inc: { __v: 1 } }, { session });
     if (await Bill.exists({ milkman_id: req.tenant, customer_id, month: { $gt: month } }).session(session)) throw new AppError(409, 'BILL_ORDER', 'Bills must be generated in chronological order.');
     const previous = await Bill.findOne({ milkman_id: req.tenant, customer_id, month: { $lt: month } }).sort({ month: -1 }).session(session);
@@ -83,6 +92,59 @@ async function generateBill(req) {
     const [bill] = await Bill.create([{ milkman_id: req.tenant, customer_id, month, openingPaise, chargesPaise, paidPaise: 0, closingPaise }], { session });
     return bill.toObject();
   });
+}
+// Recomputes the bill for `fromMonth` (and cascades opening/closing into later
+// months) so bills stay in step with deliveries, payments and carry-forward.
+async function refreshBilledMonths(session, { milkmanId, customerId, fromMonth, fallbackOpening = 0 }) {
+  const bills = await Bill.find({ milkman_id: milkmanId, customer_id: customerId, month: { $gte: fromMonth } }).sort({ month: 1 }).session(session);
+  if (!bills.length) return null;
+  const prior = await Bill.findOne({ milkman_id: milkmanId, customer_id: customerId, month: { $lt: fromMonth } }).sort({ month: -1 }).session(session);
+  let carryPaise = prior ? prior.closingPaise : fallbackOpening;
+  // Waivers, credits and debits mutate closingPaise directly; preserve their net
+  // effect so refreshing a bill never erases a manual ledger adjustment.
+  const adjustments = await Adjustment.find({ milkman_id: milkmanId, customer_id: customerId, status: 'applied', bill_id: { $in: bills.map(b => b._id) } }).session(session);
+  const adjustedPaise = new Map();
+  for (const adj of adjustments) {
+    const delta = adj.type === 'credit' || adj.type === 'waiver' ? -adj.amountPaise : adj.amountPaise;
+    adjustedPaise.set(String(adj.bill_id), (adjustedPaise.get(String(adj.bill_id)) || 0) + delta);
+  }
+  let changed = false;
+  for (const bill of bills) {
+    let chargesPaise = bill.chargesPaise;
+    if (bill.month === fromMonth) {
+      const records = await Record.find({ milkman_id: milkmanId, customer_id: customerId, deleted: false, date: { $gte: bill.month + '-01', $lte: bill.month + '-31' } }).session(session);
+      chargesPaise = records.reduce((sum, r) => sum + r.totalPaise, 0);
+    }
+    const closingPaise = carryPaise + chargesPaise - bill.paidPaise + (adjustedPaise.get(String(bill._id)) || 0);
+    if (bill.openingPaise !== carryPaise || bill.chargesPaise !== chargesPaise || bill.closingPaise !== closingPaise) {
+      bill.openingPaise = carryPaise;
+      bill.chargesPaise = chargesPaise;
+      bill.closingPaise = closingPaise;
+      await bill.save({ session });
+      changed = true;
+    }
+    carryPaise = closingPaise;
+  }
+  return { bill: bills[0], changed };
+}
+// Till-date outstanding per customer: the latest bill's closing balance (the
+// whole carry chain in one number) plus every delivery month not billed yet.
+async function outstandingByCustomer(match, customerFilter) {
+  const [latestBills, chargesByMonth, ledgers] = await Promise.all([
+    Bill.aggregate([{ $match: match }, { $sort: { month: 1 } }, { $group: { _id: '$customer_id', closingPaise: { $last: '$closingPaise' }, lastMonth: { $last: '$month' } } }]),
+    Record.aggregate([{ $match: { ...match, deleted: false } }, { $group: { _id: { customer: '$customer_id', month: { $substrCP: ['$date', 0, 7] } }, totalPaise: { $sum: '$totalPaise' } } }]),
+    Customer.find(customerFilter).select('openingBalancePaise').lean()
+  ]);
+  const billByCustomer = new Map(latestBills.map(b => [String(b._id), b]));
+  const ledgerByCustomer = new Map(ledgers.map(c => [String(c._id), c]));
+  const outstanding = new Map();
+  for (const [cid, billed] of billByCustomer) outstanding.set(cid, billed.closingPaise);
+  for (const [cid, ledger] of ledgerByCustomer) if (!outstanding.has(cid)) outstanding.set(cid, ledger.openingBalancePaise || 0);
+  for (const row of chargesByMonth) {
+    const cid = String(row._id.customer), billed = billByCustomer.get(cid);
+    if (!billed || row._id.month > billed.lastMonth) outstanding.set(cid, (outstanding.get(cid) || 0) + row.totalPaise);
+  }
+  return outstanding;
 }
 async function recordPayment(req) {
   return writeOnce(req, async session => {
@@ -127,4 +189,4 @@ async function recordPayment(req) {
     return paymentObj;
   });
 }
-module.exports = { writeOnce, enterDeliveries, generateBill, recordPayment };
+module.exports = { writeOnce, enterDeliveries, generateBill, recordPayment, refreshBilledMonths, outstandingByCustomer };
