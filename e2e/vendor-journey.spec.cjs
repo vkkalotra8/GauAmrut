@@ -17,6 +17,8 @@ test('vendor registers, adds a customer, syncs offline milk, bills and records p
   await page.getByLabel('Full name').fill('Journey Customer');
   // No phone on purpose: customers without mobile phones are first-class.
   await page.getByLabel('Service start date').fill('2025-01-01');
+  await expect(page.getByRole('dialog').getByLabel('Morning buffalo milk (litres)')).toBeVisible();
+  await expect(page.getByRole('dialog').getByLabel('Evening buffalo milk (litres)')).toBeVisible();
   await page.getByRole('dialog').getByRole('button', { name: 'Add customer', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Journey Customer' })).toBeVisible();
   await page.getByRole('link', { name: 'Milk records', exact: true }).click();
