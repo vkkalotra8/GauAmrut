@@ -213,6 +213,7 @@ main { max-width: 1600px; margin: 0 auto; padding: 28px 34px 40px; }
 .stat-icon.orange { background: #fbeee3; color: #bd8354; }
 .stat-card strong { display: block; font-family: 'Manrope', sans-serif; font-size: 27px; letter-spacing: -1px; margin: 12px 0 6px; font-weight: 800; color: var(--ink); }
 .stat-card small { font-size: 10.5px; color: #8b978a; line-height: 1.6; display: block; }
+.stat-card small.stat-sub { margin-top: 3px; color: #6f7d70; }
 .dashboard-grid { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr); gap: 22px; margin-bottom: 26px; }
 .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow-sm); }
 .card-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 22px 24px; }

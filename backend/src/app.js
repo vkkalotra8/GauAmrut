@@ -57,7 +57,7 @@ function createApp(redis) {
       Customer.countDocuments({ milkman_id: req.tenant, ...(req.user.role === 'customer' ? { _id: req.user.customer_id } : {}) }),
       Customer.countDocuments({ milkman_id: req.tenant, status: 'active', ...(req.user.role === 'customer' ? { _id: req.user.customer_id } : {}) }),
       Record.aggregate([{ $match: { ...match, date, deleted: false } }, { $group: { _id: null, quantityMl: { $sum: '$quantityMl' }, totalPaise: { $sum: '$totalPaise' }, entries: { $sum: 1 } } }]),
-      Record.aggregate([{ $match: { ...match, date: { $gte: date.slice(0, 7) + '-01', $lte: date }, deleted: false } }, { $group: { _id: '$date', totalPaise: { $sum: '$totalPaise' }, quantityMl: { $sum: '$quantityMl' } } }, { $sort: { _id: 1 } }]),
+      Record.aggregate([{ $match: { ...match, date: { $gte: date.slice(0, 7) + '-01', $lte: date }, deleted: false } }, { $group: { _id: '$date', totalPaise: { $sum: '$totalPaise' }, quantityMl: { $sum: '$quantityMl' }, entries: { $sum: 1 } } }, { $sort: { _id: 1 } }]),
       outstandingByCustomer(match, ledgerFilter),
       Payment.aggregate([{ $match: { ...match, deleted: false, createdAt: { $gte: new Date(date.slice(0, 7) + '-01T00:00:00+05:30') } } }, { $group: { _id: null, total: { $sum: '$amountPaise' } } }]),
       Record.find({ ...match, deleted: false }).sort({ createdAt: -1 }).limit(6).lean(),
@@ -66,7 +66,8 @@ function createApp(redis) {
     const ids = recent.map(r => r.customer_id);
     const customers = await Customer.find({ _id: { $in: ids }, milkman_id: req.tenant }).select('name').lean();
     const outstandingPaise = [...outstanding.values()].reduce((sum, v) => sum + v, 0);
-    ok(res, { date, customerCount, activeCustomers, today: daily[0] || { quantityMl: 0, totalPaise: 0, entries: 0 }, monthly, outstandingPaise, collectedPaise: collected[0]?.total || 0, recent: recent.map(r => ({ ...r, customerName: customers.find(c => String(c._id) === String(r.customer_id))?.name || 'Customer' })), businessName: business?.businessName });
+    const monthToDate = monthly.reduce((sum, d) => ({ quantityMl: sum.quantityMl + d.quantityMl, totalPaise: sum.totalPaise + d.totalPaise, entries: sum.entries + d.entries }), { quantityMl: 0, totalPaise: 0, entries: 0 });
+    ok(res, { date, customerCount, activeCustomers, today: daily[0] || { quantityMl: 0, totalPaise: 0, entries: 0 }, monthly, monthToDate, outstandingPaise, collectedPaise: collected[0]?.total || 0, recent: recent.map(r => ({ ...r, customerName: customers.find(c => String(c._id) === String(r.customer_id))?.name || 'Customer' })), businessName: business?.businessName });
   }));
   api.get('/customers', vendor, wrap(async (req, res) => {
     const pagination = page(req), q = String(req.query.q || '').slice(0, 100);

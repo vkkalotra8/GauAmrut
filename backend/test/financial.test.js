@@ -494,6 +494,8 @@ describe('Mid-month billing, live bill refresh, and till-date dashboard stats', 
     expect(dash.status).toBe(200);
     expect(dash.body.data.outstandingPaise).toBe(11000);
     expect(dash.body.data.collectedPaise).toBe(3000);
+    expect(dash.body.data.monthToDate).toEqual({ quantityMl: 1500, totalPaise: 9000, entries: 2 });
+    expect(dash.body.data.monthly.every(d => typeof d.entries === 'number')).toBe(true);
 
     // 7. Batch billing for the current month runs without errors.
     const batch = await post('/bills/batch-generate', { month });
