@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useSelector } from 'react-redux';
 import { Navigate, NavLink, Route, Routes, useLocation } from 'react-router-dom';
-import { Cpu, Leaf, LayoutDashboard, LogOut, Menu, MoreHorizontal, Scale, ScrollText, Settings as SettingsIcon, ShieldCheck, Store, Users, Wifi, WifiOff } from 'lucide-react';
+import { Cpu, Leaf, LayoutDashboard, LogOut, Megaphone, Menu, MoreHorizontal, Receipt, Scale, ScrollText, Settings as SettingsIcon, ShieldCheck, Store, UserPlus, Users, Wifi, WifiOff } from 'lucide-react';
 import { Brand, Empty, Field, Heading, Modal, Notice, State } from '../../components/ui';
 import useData from '../../hooks/useData';
 import { api, message } from '../../lib';
@@ -266,7 +266,7 @@ function UsersView({ canManage }) {
 
   return (
     <>
-      <Heading title="User directory" description="Manage accounts, user access, and admin permissions across the GauAmrut platform." />
+      <Heading eyebrow="PLATFORM ADMINISTRATION" title="User directory" description="Manage accounts, user access, and admin permissions across the GauAmrut platform." />
       <Notice>{notice}</Notice>
       <Notice error>{error}</Notice>
       <section className="card">
@@ -402,7 +402,7 @@ function DairiesView({ canManage }) {
 
   return (
     <>
-      <Heading title="Dairy directory" description="Review registered dairy businesses, verification status, and owner profiles." />
+      <Heading eyebrow="PLATFORM ADMINISTRATION" title="Dairy directory" description="Review registered dairy businesses, verification status, and owner profiles." />
       <Notice>{notice}</Notice>
       <Notice error>{error}</Notice>
       <section className="card">
@@ -497,7 +497,7 @@ function DisputesView({ canManage }) {
 
   return (
     <>
-      <Heading title="Platform disputes" description="Cross-tenant dispute mediation and resolution oversight." />
+      <Heading eyebrow="PLATFORM ADMINISTRATION" title="Platform disputes" description="Cross-tenant dispute mediation and resolution oversight." />
       <Notice>{notice}</Notice>
       <Notice error>{error}</Notice>
       <section className="card">
@@ -608,6 +608,7 @@ function DisputesView({ canManage }) {
 const settingsSections = [
   {
     id: 'platform',
+    icon: Megaphone,
     title: 'Announcements & support',
     description: 'The banner at the top of every signed-in dairy and customer app, plus the support contacts shown on profile pages.',
     fields: [
@@ -619,6 +620,7 @@ const settingsSections = [
   },
   {
     id: 'billing',
+    icon: Receipt,
     title: 'Billing defaults',
     description: 'Starting values used across the platform: new-customer forms open with these rates, and the invoice note appears under every bills table.',
     fields: [
@@ -629,6 +631,7 @@ const settingsSections = [
   },
   {
     id: 'operations',
+    icon: UserPlus,
     title: 'Sign-ups',
     description: 'Controls whether new dairy owners can create accounts from the sign-in page. Customers joining with a dairy code are not affected.',
     fields: [
@@ -650,6 +653,32 @@ function SettingCard({ section, doc, canManage, onSaved }) {
   const [error, setError] = useState('');
   useEffect(() => { setValues({ ...settingsDefaults[section.id], ...(doc?.payload && typeof doc.payload === 'object' ? doc.payload : {}) }); }, [section.id, doc?.version, doc?.payload]);
   const setValue = (key, value) => setValues(v => ({ ...v, [key]: value }));
+  const SectionIcon = section.icon;
+
+  const renderField = field => {
+    if (field.type === 'textarea') {
+      return (
+        <label className="field span-full" key={field.key}>
+          <span>{field.label}</span>
+          <textarea rows={2} maxLength={300} placeholder={field.placeholder} value={values[field.key] || ''} disabled={!canManage} onChange={e => setValue(field.key, e.target.value)} />
+        </label>
+      );
+    }
+    if (field.type === 'rupees') {
+      return (
+        <label className="field" key={field.key}>
+          <span>{field.label}</span>
+          <input type="number" min="0" step="0.01" value={(values[field.key] ?? 0) / 100} disabled={!canManage} onChange={e => { const n = Number(e.target.value); setValue(field.key, Number.isFinite(n) && n >= 0 ? Math.round(n * 100) : 0); }} />
+        </label>
+      );
+    }
+    return (
+      <label className="field" key={field.key}>
+        <span>{field.label}</span>
+        <input type={field.type} maxLength={field.type === 'email' ? 254 : 200} placeholder={field.placeholder} value={values[field.key] || ''} disabled={!canManage} onChange={e => setValue(field.key, e.target.value)} />
+      </label>
+    );
+  };
 
   async function save(e) {
     e.preventDefault();
@@ -668,7 +697,8 @@ function SettingCard({ section, doc, canManage, onSaved }) {
 
   return (
     <section className="card setting-card">
-      <div className="card-heading">
+      <div className="card-heading setting-heading">
+        <span className="setting-icon"><SectionIcon size={18} aria-hidden="true" /></span>
         <div>
           <h2>{section.title}</h2>
           <p>{section.description}</p>
@@ -680,44 +710,25 @@ function SettingCard({ section, doc, canManage, onSaved }) {
         )}
       </div>
       <form onSubmit={save}>
-        {section.fields.map(field => {
-          if (field.type === 'toggle') {
-            return (
-              <label className="switch-field" key={field.key}>
-                <input type="checkbox" checked={Boolean(values[field.key])} disabled={!canManage} onChange={e => setValue(field.key, e.target.checked)} />
-                <span>{field.label}</span>
-              </label>
-            );
-          }
-          if (field.type === 'textarea') {
-            return (
-              <label className="field" key={field.key}>
-                <span>{field.label}</span>
-                <textarea rows={2} maxLength={300} placeholder={field.placeholder} value={values[field.key] || ''} disabled={!canManage} onChange={e => setValue(field.key, e.target.value)} />
-              </label>
-            );
-          }
-          if (field.type === 'rupees') {
-            return (
-              <label className="field" key={field.key}>
-                <span>{field.label}</span>
-                <input type="number" min="0" step="0.01" value={(values[field.key] ?? 0) / 100} disabled={!canManage} onChange={e => { const n = Number(e.target.value); setValue(field.key, Number.isFinite(n) && n >= 0 ? Math.round(n * 100) : 0); }} />
-              </label>
-            );
-          }
-          return (
-            <label className="field" key={field.key}>
-              <span>{field.label}</span>
-              <input type={field.type} maxLength={field.type === 'email' ? 254 : 200} placeholder={field.placeholder} value={values[field.key] || ''} disabled={!canManage} onChange={e => setValue(field.key, e.target.value)} />
-            </label>
-          );
-        })}
-        <Notice error>{error}</Notice>
-        {canManage ? (
-          <button className="button primary" disabled={busy}>{busy ? 'Saving…' : 'Save changes'}</button>
-        ) : (
-          <p className="form-note">You can review these settings, but changing them requires the settings manager permission.</p>
+        {section.fields.filter(f => f.type === 'toggle').map(field => (
+          <label className="switch-field" key={field.key}>
+            <input type="checkbox" checked={Boolean(values[field.key])} disabled={!canManage} onChange={e => setValue(field.key, e.target.checked)} />
+            <span>{field.label}</span>
+          </label>
+        ))}
+        {section.fields.some(f => f.type !== 'toggle') && (
+          <div className="form-grid">
+            {section.fields.filter(f => f.type !== 'toggle').map(renderField)}
+          </div>
         )}
+        <div className="setting-actions">
+          <Notice error>{error}</Notice>
+          {canManage ? (
+            <button className="button primary" disabled={busy}>{busy ? 'Saving…' : 'Save changes'}</button>
+          ) : (
+            <p className="form-note">You can review these settings, but changing them requires the settings manager permission.</p>
+          )}
+        </div>
       </form>
     </section>
   );
@@ -731,7 +742,7 @@ function SettingsView({ canManage }) {
   const extras = docs.filter(d => !settingsSections.some(s => s.id === d.section));
   return (
     <>
-      <Heading title="Platform settings" description="These values apply to every dairy and customer on GauAmrut the moment you save them." />
+      <Heading eyebrow="PLATFORM ADMINISTRATION" title="Platform settings" description="These values apply to every dairy and customer on GauAmrut the moment you save them." />
       <Notice>{notice}</Notice>
       <State resource={resource}>
         <>
@@ -769,7 +780,7 @@ function ActivityView() {
   const resource = useData(`/admin/activity?page=${page}`);
   return (
     <>
-      <Heading title="Activity log" description="Every platform action in plain language — who did it, what changed, and when." />
+      <Heading eyebrow="PLATFORM ADMINISTRATION" title="Activity log" description="Every platform action in plain language — who did it, what changed, and when." />
       <section className="card">
         <State resource={resource}>
           {resource.data?.length ? (
