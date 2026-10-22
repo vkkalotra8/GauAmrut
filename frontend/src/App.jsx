@@ -250,8 +250,8 @@ function ConflictModal({ batch, close, refresh }) {
       refresh();
       return;
     }
-    if (items.some(i => !i.quantityMl || i.quantityMl <= 0 || i.quantityMl > 100000)) {
-      setError('Each delivery must have a quantity between 0.001 L and 100 L.');
+    if (items.some(i => !Number.isFinite(i.quantityMl) || i.quantityMl < 0 || i.quantityMl > 100000)) {
+      setError('Each delivery must have a quantity between 0 L and 100 L.');
       return;
     }
     setBusy(true);
@@ -305,7 +305,7 @@ function ConflictModal({ batch, close, refresh }) {
                     aria-label={`${it.customerName || 'Customer'} quantity`}
                     className="inline-input"
                     type="number"
-                    min="0.001"
+                    min="0"
                     max="100"
                     step="0.001"
                     value={it.quantityMl / 1000}

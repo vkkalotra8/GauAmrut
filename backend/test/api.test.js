@@ -132,6 +132,26 @@ describe('Transactional delivery ledger', () => {
     expect(reentered.body.data[0]._id).toBe(recId);
     expect(await models.Record.countDocuments({ deleted: false })).toBe(1);
   });
+  test('zero-quantity entries record a skipped shift and are charged nothing', async () => {
+    const batch = await post('/records/batch', delivery());
+    const recId = batch.body.data[0]._id;
+
+    const corrected = await request(app)
+      .patch(`/api/records/${recId}`)
+      .set('Authorization', `Bearer ${tokenA}`)
+      .send({ quantityMl: 0 });
+    expect(corrected.status).toBe(200);
+    expect(corrected.body.data.quantityMl).toBe(0);
+    expect(corrected.body.data.totalPaise).toBe(0);
+
+    const zeroEntry = await post('/records/batch', delivery(customerA, { shift: 'evening', quantityMl: 0 }), 'zero-entry-key');
+    expect(zeroEntry.status).toBe(201);
+    expect(zeroEntry.body.data[0].quantityMl).toBe(0);
+    expect(zeroEntry.body.data[0].totalPaise).toBe(0);
+
+    expect((await request(app).patch(`/api/records/${recId}`).set('Authorization', `Bearer ${tokenA}`).send({ quantityMl: -100 })).status).toBe(400);
+    expect((await post('/records/batch', delivery(customerA, { shift: 'evening', quantityMl: -5 }), 'negative-entry-key')).status).toBe(400);
+  });
   test('billed deliveries cannot be corrected or deleted', async () => {
     await post('/records/batch', delivery(), 'del-to-bill');
     const rec = (await models.Record.findOne()).toObject();
