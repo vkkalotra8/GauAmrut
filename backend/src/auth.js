@@ -10,6 +10,7 @@ const { AppError } = require('./domain');
 const { wrap, validate, auth } = require('./middleware');
 const schema = require('./validation');
 const { resolveDairy, beginOnboarding, completeOnboarding } = require('./onboarding');
+const { platformSettings } = require('./settings');
 const normalize = email => email.trim().toLowerCase();
 const otpHash = otp => crypto.createHmac('sha256', process.env.JWT_SECRET).update(otp).digest('hex');
 async function identity(user) {
@@ -44,6 +45,7 @@ function authRoutes(limiter) {
   const issue = async (req, res, customer = false) => {
     const email = normalize(req.body.email);
     if (await User.exists({ email })) throw new AppError(409, 'ACCOUNT_EXISTS', 'An account already exists for this email.');
+    if (!customer && !(await platformSettings()).registration.open) throw new AppError(403, 'REGISTRATION_CLOSED', 'New dairy sign-ups are currently closed. Please contact GauAmrut support to open your account.');
     const otp = String(crypto.randomInt(100000, 1000000));
     const dairy = customer ? await resolveDairy(req.body.code) : null;
     const registration = { ...req.body, email, password: await bcrypt.hash(req.body.password, 12), role: customer ? 'customer' : 'milkman', ...(dairy ? { milkman_id: String(dairy._id), code: dairy.code } : {}) };
@@ -70,6 +72,7 @@ function authRoutes(limiter) {
     const email = normalize(req.body.email);
     const candidate = await Otp.findOneAndUpdate({ email, expiry: { $gt: new Date() }, attempts: { $lt: 5 } }, { $inc: { attempts: 1 } }, { new: true }).select('+hash +registration');
     if (!candidate || !crypto.timingSafeEqual(Buffer.from(candidate.hash), Buffer.from(otpHash(req.body.otp)))) throw new AppError(400, 'INVALID_OTP', 'Code is incorrect, expired, or has reached its attempt limit.');
+    if (candidate.registration.role !== 'customer' && !(await platformSettings()).registration.open) throw new AppError(403, 'REGISTRATION_CLOSED', 'New dairy sign-ups are currently closed. Please contact GauAmrut support to open your account.');
     const session = await mongoose.startSession();
     let user, onboarding;
     try {

@@ -16,6 +16,7 @@ const { accountsRoutes, change } = require('./accounts');
 const { runMonthlyBillingScheduler } = require('./billing-scheduler');
 const { createNotification, getNotifications, markRead, markAllRead } = require('./notifications');
 const { generateBillPdf } = require('./pdf');
+const { platformSettings } = require('./settings');
 function createApp(redis) {
   const app = express();
   app.disable('x-powered-by');
@@ -32,6 +33,10 @@ function createApp(redis) {
   app.use(express.json({ limit: '100kb' }));
   const limiter = rateLimit({ windowMs: 15 * 60000, limit: 20, standardHeaders: 'draft-8', legacyHeaders: false, ...(redis ? { store: new RedisStore({ sendCommand: (...args) => redis.sendCommand(args) }) } : {}), message: { error: { code: 'RATE_LIMITED', message: 'Too many attempts. Try again in 15 minutes.' } } });
   app.get('/api/health', (_req, res) => { const ready = mongoose.connection.readyState === 1 && (!redis || redis.isReady); res.status(ready ? 200 : 503).json({ success: ready, data: { status: ready ? 'ready' : 'unavailable', database: mongoose.connection.readyState === 1, redis: redis ? redis.isReady : 'not configured' } }); });
+  // Public, unauthenticated read of the platform settings every signed-in
+  // client consumes (announcement banner, support contact, billing defaults,
+  // sign-up availability). Contains no tenant or account data.
+  app.get('/api/platform/settings', wrap(async (_req, res) => res.json({ success: true, data: await platformSettings() })));
   app.use('/api/auth', authRoutes(limiter));
   const api = express.Router();
   api.use(auth);

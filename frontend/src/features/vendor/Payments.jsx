@@ -6,11 +6,13 @@ import { CollectionsDonut } from '../../components/charts';
 import { Heading, Notice, State, Empty, Modal, Field } from '../../components/ui';
 import { api, money, message, decimalUnits } from '../../lib';
 import useData from '../../hooks/useData';
+import { usePlatformSettings } from '../../platform';
 import { demoBills, demoCustomers, demoClaims, demoAdjustments, demoPayments } from '../../demo';
 
 export default function Payments() {
   const { t } = useTranslation();
   const demo = useSelector(s => s.session.demo);
+  const platform = usePlatformSettings();
   const [activeTab, setActiveTab] = useState('bills');
   const [page, setPage] = useState(1);
   const bills = useData(`/bills?page=${page}`, demoBills);
@@ -347,6 +349,7 @@ export default function Payments() {
               <Empty>{t('payments.noBills', 'No bills yet. Finalize a completed month to start collecting payments.')}</Empty>
             )}
           </State>
+          {platform?.invoice?.footer && <p className="invoice-footer-note">{platform.invoice.footer}</p>}
         </section>
       )}
 

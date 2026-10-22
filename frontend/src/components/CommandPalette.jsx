@@ -13,11 +13,14 @@ function Palette({ navItems, close }) {
   const [query, setQuery] = useState('');
   const [active, setActive] = useState(0);
   const isCustomer = session.user?.role === 'customer';
-  const resource = useData(isCustomer ? '/profile' : '/customers?limit=100', session.demo ? demoCustomers : null);
+  // Admins cannot query /customers (platform routes only), so the palette
+  // searches a harmless admin endpoint for them instead of a guaranteed 403.
+  const searchPath = isCustomer ? '/profile' : session.user?.role === 'admin' ? '/admin/dashboard' : '/customers?limit=100';
+  const resource = useData(searchPath, session.demo ? demoCustomers : null);
   useEffect(() => { const dialog = document.getElementById('command-palette-dialog'); if (dialog?.showModal) dialog.showModal(); return () => { if (dialog?.close) dialog.close(); }; }, []);
   const q = query.trim().toLowerCase();
   const pages = navItems.filter(n => !q || n.label.toLowerCase().includes(q)).map(n => ({ id: `page-${n.to}`, label: n.label, icon: n.icon, run: () => navigate(n.to) }));
-  const customers = !isCustomer && q ? (resource.data || []).filter(c => c.name.toLowerCase().includes(q)).slice(0, 5).map(c => ({ id: `customer-${c._id}`, label: c.name, sub: c.phone, icon: Users, run: () => navigate('/customers') })) : [];
+  const customers = !isCustomer && q && Array.isArray(resource.data) ? resource.data.filter(c => c.name?.toLowerCase().includes(q)).slice(0, 5).map(c => ({ id: `customer-${c._id}`, label: c.name, sub: c.phone, icon: Users, run: () => navigate('/customers') })) : [];
   const actions = [
     !isCustomer && !session.demo && { id: 'add-customer', label: t('palette.addCustomer', 'Add a customer'), icon: UserPlus, run: () => navigate('/customers?add=1') },
     { id: 'record-delivery', label: t('palette.recordDelivery', 'Record milk delivery'), icon: Droplets, run: () => navigate('/records') },

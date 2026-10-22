@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { Plus, Check, X, Clock, CheckCircle2, MessageSquare, AlertCircle, ShoppingBag, Send, XCircle, Download, Calendar, PauseCircle } from 'lucide-react';
 import { api, message, money, updateUser, decimalUnits, serviceDate } from '../../lib';
 import useData from '../../hooks/useData';
+import { usePlatformSettings } from '../../platform';
 import { Empty, Field, Heading, Notice, State, Modal } from '../../components/ui';
 import { MilkTrend } from '../../components/charts';
 import { demoProducts, demoOrders, demoDisputes } from '../../demo';
@@ -328,6 +329,7 @@ export function CustomerPayments() {
   const bills = useData(`/bills?page=${page}`), payments = useData(`/payments?page=${paymentPage}`);
   const claims = useData('/payment-claims', []), adjustments = useData('/adjustments', []);
   const profile = useData('/profile');
+  const platform = usePlatformSettings();
   const [claimModalOpen, setClaimModalOpen] = useState(false);
   const [activeReceipt, setActiveReceipt] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -461,6 +463,7 @@ export function CustomerPayments() {
             <Empty>{t('customerPortal.noBills', 'No finalized bills yet.')}</Empty>
           )}
         </State>
+        {platform?.invoice?.footer && <p className="invoice-footer-note">{platform.invoice.footer}</p>}
         <Pager page={page} setPage={setPage} total={bills.meta?.total || 0} />
       </section>
 
@@ -769,6 +772,7 @@ export function CustomerPayments() {
 export function CustomerProfile() {
   const { t, i18n } = useTranslation();
   const resource = useData('/profile'), dispatch = useDispatch(), [notice, setNotice] = useState(''), [error, setError] = useState(''), [busy, setBusy] = useState(false);
+  const platform = usePlatformSettings();
   async function save(e) {
     e.preventDefault();
     setBusy(true);
@@ -788,7 +792,7 @@ export function CustomerProfile() {
       setBusy(false);
     }
   }
-  return <><Heading title={t('customerPortal.profileTitle', 'Your profile')} description={t('customerPortal.profileDescription', 'Keep your name, delivery address, and language preference up to date.')}/><Notice>{notice}</Notice><Notice error>{error}</Notice><State resource={resource}>{resource.data && <section className="card profile-card"><form onSubmit={save} key={resource.data.updatedAt}><Field label="Your name" name="name" defaultValue={resource.data.name} minLength={2} required/><Field label="Delivery address" name="address" defaultValue={resource.data.address}/><label className="field"><span>{t('customerPortal.preferredLanguage', 'Preferred language')}</span><select name="language" defaultValue={resource.data.language || i18n.language}><option value="en">English</option><option value="hi">हिन्दी (Hindi)</option><option value="gu">ગુજરાતી (Gujarati)</option></select></label><p className="form-note">Verified email: {resource.data.email}<br/>Cow milk: {money(resource.data.cowRatePaise)} / L · Buffalo milk: {money(resource.data.buffaloRatePaise)} / L<br/>Service: {resource.data.status}</p><button className="button primary" disabled={busy}>{busy ? t('common.saving', 'Saving…') : t('customerPortal.saveProfile', 'Save profile')}</button></form></section>}</State></>;
+  return <><Heading title={t('customerPortal.profileTitle', 'Your profile')} description={t('customerPortal.profileDescription', 'Keep your name, delivery address, and language preference up to date.')}/><Notice>{notice}</Notice><Notice error>{error}</Notice><State resource={resource}>{resource.data && <section className="card profile-card"><form onSubmit={save} key={resource.data.updatedAt}><Field label="Your name" name="name" defaultValue={resource.data.name} minLength={2} required/><Field label="Delivery address" name="address" defaultValue={resource.data.address}/><label className="field"><span>{t('customerPortal.preferredLanguage', 'Preferred language')}</span><select name="language" defaultValue={resource.data.language || i18n.language}><option value="en">English</option><option value="hi">हिन्दी (Hindi)</option><option value="gu">ગુજરાતી (Gujarati)</option></select></label><p className="form-note">Verified email: {resource.data.email}<br/>Cow milk: {money(resource.data.cowRatePaise)} / L · Buffalo milk: {money(resource.data.buffaloRatePaise)} / L<br/>Service: {resource.data.status}</p>{(platform?.support?.email || platform?.support?.phone) && <p className="form-note">Platform support: {[platform.support.email, platform.support.phone].filter(Boolean).join(' · ')}</p>}<button className="button primary" disabled={busy}>{busy ? t('common.saving', 'Saving…') : t('customerPortal.saveProfile', 'Save profile')}</button></form></section>}</State></>;
 }
 
 export function CustomerOrders() {

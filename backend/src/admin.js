@@ -4,6 +4,7 @@ const { AppError } = require('./domain');
 const { wrap, validate } = require('./middleware');
 const { permissionsFor } = require('./admin-permissions');
 const schemas = require('./validation');
+const { SECTION_SCHEMAS } = require('./settings');
 
 const permit = permission => (req, _res, next) =>
   permissionsFor(req.user).includes(permission)
@@ -27,8 +28,7 @@ function adminRoutes() {
 
   const lists = [
     ['/users', 'users.read', User, 'name email role adminRole active createdAt'],
-    ['/dairies', 'dairies.read', Milkman, 'businessName name phone verified subscription createdAt'],
-    ['/activity', 'audit.read', Audit, 'actor action target milkman_id createdAt requestId']
+    ['/dairies', 'dairies.read', Milkman, 'businessName name phone verified subscription createdAt']
   ];
 
   for (const [path, permission, Model, fields] of lists) {
@@ -44,6 +44,90 @@ function adminRoutes() {
       res.json({ success: true, data, meta: { total, page, limit } });
     }));
   }
+
+  // Full account detail for one user: account fields plus the role-specific
+  // profile (dairy business or customer service record), quick stats, and the
+  // account's most recent audited actions.
+  router.get('/users/:id', permit('users.read'), wrap(async (req, res) => {
+    const user = await User.findById(req.params.id).select('name email role adminRole active createdAt milkman_id customer_id').lean();
+    if (!user) throw new AppError(404, 'NOT_FOUND', 'User was not found.');
+    const detail = {
+      _id: user._id, name: user.name, email: user.email, role: user.role, adminRole: user.adminRole,
+      active: user.active, createdAt: user.createdAt, profile: null, stats: {}, recentActions: []
+    };
+    const recentActions = Audit.find({ actor: user._id }).select('action target createdAt').sort({ createdAt: -1 }).limit(5).lean();
+    if (user.role === 'milkman' && user.milkman_id) {
+      const [dairy, customers, deliveries, disputes, actions] = await Promise.all([
+        Milkman.findById(user.milkman_id).lean(),
+        Customer.countDocuments({ milkman_id: user.milkman_id }),
+        Record.countDocuments({ milkman_id: user.milkman_id, deleted: false }),
+        Dispute.countDocuments({ milkman_id: user.milkman_id }),
+        recentActions
+      ]);
+      detail.profile = dairy ? {
+        businessName: dairy.businessName, name: dairy.name, phone: dairy.phone, upiId: dairy.upiId,
+        code: dairy.code, verified: dairy.verified, subscription: dairy.subscription, createdAt: dairy.createdAt
+      } : null;
+      detail.stats = { customers, deliveries, disputes };
+      detail.recentActions = actions;
+    } else if (user.role === 'customer' && user.customer_id) {
+      const [customer, dairy, deliveries, disputes, actions] = await Promise.all([
+        Customer.findById(user.customer_id).lean(),
+        user.milkman_id ? Milkman.findById(user.milkman_id).select('businessName').lean() : null,
+        Record.countDocuments({ customer_id: user.customer_id, deleted: false }),
+        Dispute.countDocuments({ customer_id: user.customer_id }),
+        recentActions
+      ]);
+      detail.profile = customer ? {
+        name: customer.name, phone: customer.phone, address: customer.address, status: customer.status,
+        startDate: customer.startDate, cowRatePaise: customer.cowRatePaise, buffaloRatePaise: customer.buffaloRatePaise,
+        dairyName: dairy?.businessName || null
+      } : null;
+      detail.stats = { deliveries, disputes };
+      detail.recentActions = actions;
+    } else if (user.role === 'admin') {
+      detail.recentActions = await recentActions;
+    }
+    res.json({ success: true, data: detail });
+  }));
+
+  // Activity log enriched with human details: who did it (resolved actor) and
+  // what it touched (resolved target), so the console reads like a story of
+  // the platform instead of raw ObjectIds.
+  router.get('/activity', permit('audit.read'), wrap(async (req, res) => {
+    const page = Number(req.query.page || 1), limit = 25;
+    if (!Number.isInteger(page) || page < 1 || page > 10000) {
+      throw new AppError(400, 'INVALID_PAGINATION', 'Page must be a positive integer up to 10000.');
+    }
+    const [rows, total] = await Promise.all([
+      Audit.find().select('actor action target after milkman_id createdAt requestId').sort({ createdAt: -1, _id: -1 }).skip((page - 1) * limit).limit(limit).lean(),
+      Audit.countDocuments()
+    ]);
+    const looksLikeId = value => typeof value === 'string' && /^[0-9a-fA-F]{24}$/.test(value);
+    const actorIds = [...new Set(rows.map(r => r.actor).filter(Boolean).map(String))];
+    const targetIds = [...new Set(rows.map(r => r.target).filter(looksLikeId))];
+    const [actors, targetUsers, targetDairies, targetCustomers] = await Promise.all([
+      actorIds.length ? User.find({ _id: { $in: actorIds } }).select('name email role adminRole').lean() : [],
+      targetIds.length ? User.find({ _id: { $in: targetIds } }).select('name email role').lean() : [],
+      targetIds.length ? Milkman.find({ _id: { $in: targetIds } }).select('businessName').lean() : [],
+      targetIds.length ? Customer.find({ _id: { $in: targetIds } }).select('name').lean() : []
+    ]);
+    const byId = list => new Map(list.map(d => [String(d._id), d]));
+    const actorMap = byId(actors), userMap = byId(targetUsers), dairyMap = byId(targetDairies), customerMap = byId(targetCustomers);
+    const data = rows.map(r => {
+      const actor = r.actor ? actorMap.get(String(r.actor)) : null;
+      const targetDairy = dairyMap.get(String(r.target));
+      const targetCustomer = customerMap.get(String(r.target));
+      const targetUser = userMap.get(String(r.target));
+      return {
+        _id: r._id, action: r.action, target: r.target, after: r.after, createdAt: r.createdAt, requestId: r.requestId,
+        actor: actor ? { name: actor.name, email: actor.email, role: actor.role, adminRole: actor.adminRole } : null,
+        targetLabel: targetDairy?.businessName || targetCustomer?.name || targetUser?.email || null,
+        targetType: targetDairy ? 'dairy' : targetCustomer ? 'customer' : targetUser ? 'user' : null
+      };
+    });
+    res.json({ success: true, data, meta: { total, page, limit } });
+  }));
 
   // Toggle user active status (FR-ADM-03: Last super_admin safeguard)
   router.patch('/users/:id/status', permit('users.manage'), validate(schemas.adminUserStatus), wrap(async (req, res) => {
@@ -189,19 +273,40 @@ function adminRoutes() {
 
   // Settings
   router.get('/settings', permit('settings.read'), wrap(async (_req, res) => {
-    const settings = await AdminSetting.find().lean();
-    res.json({ success: true, data: settings });
+    const settings = await AdminSetting.find().select('section payload version updatedAt updatedBy').lean();
+    const updaterIds = [...new Set(settings.map(s => s.updatedBy).filter(Boolean).map(String))];
+    const updaters = updaterIds.length ? await User.find({ _id: { $in: updaterIds } }).select('name email').lean() : [];
+    const byId = new Map(updaters.map(u => [String(u._id), u]));
+    res.json({
+      success: true,
+      data: settings.map(s => ({
+        ...s,
+        updatedByName: s.updatedBy ? byId.get(String(s.updatedBy))?.name || null : null
+      }))
+    });
   }));
 
   router.put('/settings/:section', permit('settings.manage'), validate(schemas.adminSetting), wrap(async (req, res) => {
-    const section = req.params.section.toLowerCase();
+    const section = String(req.params.section).toLowerCase();
+    if (!/^[a-z][a-z0-9_-]{0,30}$/.test(section)) {
+      throw new AppError(400, 'INVALID_SETTINGS_SECTION', 'Settings sections use lowercase letters, digits, dashes, and underscores only.');
+    }
+    // Known sections are validated field by field; unknown sections keep
+    // accepting a generic object so new groups can be introduced safely.
+    let payload = req.body.payload;
+    const schema = SECTION_SCHEMAS[section];
+    if (schema) {
+      const { value, error } = schema.validate(payload, { abortEarly: false, convert: false });
+      if (error) throw new AppError(400, 'VALIDATION_ERROR', error.details[0].message);
+      payload = value;
+    }
     const existing = await AdminSetting.findOne({ section });
     const before = existing ? existing.payload : null;
     const version = existing ? existing.version + 1 : 1;
 
     const setting = await AdminSetting.findOneAndUpdate(
       { section },
-      { payload: req.body.payload, version, updatedBy: req.user._id },
+      { payload, version, updatedBy: req.user._id },
       { upsert: true, new: true }
     );
 
