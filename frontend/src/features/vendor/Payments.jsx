@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import { useSelector } from 'react-redux';
 import { useTranslation } from 'react-i18next';
-import { Plus, Check, Search, Receipt, AlertCircle, FileText, CheckCircle2, XCircle, Printer, RotateCcw, Download } from 'lucide-react';
+import { Plus, Check, Search, Receipt, AlertCircle, FileText, CheckCircle2, XCircle, Printer, RotateCcw, Download, Send } from 'lucide-react';
 import { CollectionsDonut } from '../../components/charts';
 import { Heading, Notice, State, Empty, Modal, Field } from '../../components/ui';
+import ShareToWhatsAppModal from '../../components/ShareToWhatsApp';
 import { api, money, message, decimalUnits, serviceDate } from '../../lib';
 import useData from '../../hooks/useData';
 import { usePlatformSettings } from '../../platform';
@@ -217,15 +218,31 @@ export default function Payments() {
     }
   }
 
+  async function fetchBillPdf(billId, month) {
+    const r = await api.get(`/bills/${billId}/pdf`, { responseType: 'blob' });
+    return { blob: r.data, filename: `bill-${month}.pdf` };
+  }
+
+  const [shareBill, setShareBill] = useState(null);
+
   async function downloadBillPdf(billId, month) {
     try {
-      const r = await api.get(`/bills/${billId}/pdf`, { responseType: 'blob' });
-      const url = URL.createObjectURL(r.data);
+      const { blob, filename } = await fetchBillPdf(billId, month);
+      const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `bill-${month}.pdf`;
+      a.download = filename;
       a.click();
       URL.revokeObjectURL(url);
+    } catch (err) {
+      setNotice(message(err));
+    }
+  }
+
+  async function shareBillPdf(billId, month) {
+    try {
+      const { blob, filename } = await fetchBillPdf(billId, month);
+      setShareBill({ blob, filename });
     } catch (err) {
       setNotice(message(err));
     }
@@ -332,6 +349,15 @@ export default function Payments() {
                               onClick={() => downloadBillPdf(b._id, b.month)}
                             >
                               <Download size={14} /> PDF
+                            </button>
+                            <button
+                              type="button"
+                              className="text-button"
+                              style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                              title="Share PDF bill on WhatsApp"
+                              onClick={() => shareBillPdf(b._id, b.month)}
+                            >
+                              <Send size={14} /> WhatsApp
                             </button>
                             {b.closingPaise > 0 ? (
                               <button type="button" className="button small" onClick={() => open(b)}>
@@ -845,6 +871,16 @@ export default function Payments() {
             </div>
           </div>
         </Modal>
+      )}
+
+      {shareBill && (
+        <ShareToWhatsAppModal
+          fileName={shareBill.filename}
+          blob={shareBill.blob}
+          caption={`Monthly milk bill (${shareBill.filename.replace('bill-', '').replace('.pdf', '')})`}
+          close={() => setShareBill(null)}
+          onSent={() => setNotice('Bill PDF sent to WhatsApp.')}
+        />
       )}
     </>
   );

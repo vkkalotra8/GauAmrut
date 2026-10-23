@@ -9,7 +9,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { motion } from 'framer-motion';
-import { ArrowRight, ArrowUpRight, BarChart3, Check, ChevronLeft, ChevronRight, Download, Droplets, LayoutDashboard, Leaf, LogOut, Menu, MessageSquare, MoreHorizontal, Package, Plus, Search, Settings, ShieldCheck, ShoppingBag, Sun, Users, Wallet, Wifi, WifiOff, X } from 'lucide-react';
+import { ArrowRight, ArrowUpRight, BarChart3, Check, ChevronLeft, ChevronRight, Download, Droplets, LayoutDashboard, Leaf, LogOut, Menu, MessageSquare, MoreHorizontal, Package, Plus, Search, Send, Settings, ShieldCheck, ShoppingBag, Sun, Users, Wallet, Wifi, WifiOff, X } from 'lucide-react';
 import { api, decimalUnits, message, money, serviceDate, signOut, store } from './lib';
 import { Brand, Notice, State, Empty, Heading, Modal, Field, AnimatedNumber } from './components/ui';
 import { MilkTrend } from './components/charts';
@@ -25,6 +25,7 @@ import ThemeToggle from './components/ThemeToggle';
 import CommandPalette from './components/CommandPalette';
 import NotificationsDrawer from './components/NotificationsDrawer';
 import AnnouncementBanner from './components/AnnouncementBanner';
+import ShareToWhatsAppModal from './components/ShareToWhatsApp';
 import { usePlatformSettings } from './platform';
 
 const vendorNav = [
@@ -108,56 +109,64 @@ function Customers() {
 }
 function Pagination({ page, setPage, total }) { return <div className="pagination"><small>{total} results · Page {page}</small><button className="icon-button" disabled={page === 1} onClick={() => setPage(page - 1)} aria-label="Previous page"><ChevronLeft size={18}/></button><button className="icon-button" disabled={page * 50 >= total} onClick={() => setPage(page + 1)} aria-label="Next page"><ChevronRight size={18}/></button></div>; }
 function Reports() {
-  const demo = useSelector(s => s.session.demo), [month, setMonth] = useState(serviceDate().slice(0, 7)), [error, setError] = useState(''), [busyReport, setBusyReport] = useState('');
+  const demo = useSelector(s => s.session.demo), [month, setMonth] = useState(serviceDate().slice(0, 7)), [error, setError] = useState(''), [notice, setNotice] = useState(''), [busyReport, setBusyReport] = useState(''), [share, setShare] = useState(null);
+  function reportTarget(type) {
+    const target = {
+      deliveries: [`/reports/deliveries.csv?month=${month}`, `gauamrut-deliveries-${month}.csv`],
+      payments: [`/reports/payments.csv?month=${month}`, `gauamrut-payments-${month}.csv`],
+      customers: ['/reports/customer-summary.csv', 'gauamrut-customers.csv'],
+      orders: [`/reports/orders.csv?month=${month}`, `gauamrut-orders-${month}.csv`],
+      'deliveries-pdf': [`/reports/deliveries.pdf?month=${month}`, `gauamrut-deliveries-${month}.pdf`],
+      'payments-pdf': [`/reports/payments.pdf?month=${month}`, `gauamrut-payments-${month}.pdf`],
+      'customers-pdf': ['/reports/customer-summary.pdf', 'gauamrut-customers-summary.pdf'],
+      'orders-pdf': [`/reports/orders.pdf?month=${month}`, `gauamrut-orders-${month}.pdf`]
+    }[type] || ['', ''];
+    return { endpoint: target[0], filename: target[1] };
+  }
+  async function getReport(type) {
+    const { endpoint, filename } = reportTarget(type);
+    const r = await api.get(endpoint, { responseType: 'blob' });
+    return { blob: r.data, filename };
+  }
+  async function reportError(e) {
+    if (e.response?.data instanceof Blob) {
+      try { setError(JSON.parse(await e.response.data.text()).error.message); } catch { setError(message(e)); }
+    } else setError(message(e));
+  }
   async function download(type) {
     setError('');
     if (demo) { setError('Sign in to export your dairy’s records. Demo data is for preview only.'); return; }
     setBusyReport(type);
     try {
-      let endpoint = '';
-      let filename = '';
-      if (type === 'deliveries') {
-        endpoint = `/reports/deliveries.csv?month=${month}`;
-        filename = `gauamrut-deliveries-${month}.csv`;
-      } else if (type === 'payments') {
-        endpoint = `/reports/payments.csv?month=${month}`;
-        filename = `gauamrut-payments-${month}.csv`;
-      } else if (type === 'customers') {
-        endpoint = `/reports/customer-summary.csv`;
-        filename = `gauamrut-customers.csv`;
-      } else if (type === 'orders') {
-        endpoint = `/reports/orders.csv?month=${month}`;
-        filename = `gauamrut-orders-${month}.csv`;
-      } else if (type === 'deliveries-pdf') {
-        endpoint = `/reports/deliveries.pdf?month=${month}`;
-        filename = `gauamrut-deliveries-${month}.pdf`;
-      } else if (type === 'payments-pdf') {
-        endpoint = `/reports/payments.pdf?month=${month}`;
-        filename = `gauamrut-payments-${month}.pdf`;
-      } else if (type === 'customers-pdf') {
-        endpoint = `/reports/customer-summary.pdf`;
-        filename = `gauamrut-customers-summary.pdf`;
-      } else if (type === 'orders-pdf') {
-        endpoint = `/reports/orders.pdf?month=${month}`;
-        filename = `gauamrut-orders-${month}.pdf`;
-      }
-      const r = await api.get(endpoint, { responseType: 'blob' });
-      const url = URL.createObjectURL(r.data);
+      const { blob, filename } = await getReport(type);
+      const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
       a.download = filename;
       a.click();
       URL.revokeObjectURL(url);
     } catch (e) {
-      if (e.response?.data instanceof Blob) {
-        try { setError(JSON.parse(await e.response.data.text()).error.message); } catch { setError(message(e)); }
-      } else setError(message(e));
+      await reportError(e);
+    } finally {
+      setBusyReport('');
+    }
+  }
+  async function sharePdf(type) {
+    setError('');
+    if (demo) { setError('Sign in to share your dairy’s records. Demo data is for preview only.'); return; }
+    setBusyReport(`share-${type}`);
+    try {
+      const { blob, filename } = await getReport(type);
+      setShare({ blob, filename });
+    } catch (e) {
+      await reportError(e);
     } finally {
       setBusyReport('');
     }
   }
   return <>
     <Heading eyebrow="THE DETAILS THAT MATTER." title="Your dairy, in numbers" description="Take accurate delivery records, payment ledgers, and customer summaries wherever you need them."/>
+    <Notice>{notice}</Notice>
     <Notice error>{error}</Notice>
     <div className="reports-grid">
       <section className="card report-card">
@@ -171,6 +180,9 @@ function Reports() {
           </button>
           <button className="button" disabled={Boolean(busyReport) || !month} onClick={() => download('deliveries-pdf')}>
             <Download size={17}/>{busyReport === 'deliveries-pdf' ? 'Preparing PDF…' : 'Download PDF'}
+          </button>
+          <button className="button" disabled={Boolean(busyReport) || !month} onClick={() => sharePdf('deliveries-pdf')}>
+            <Send size={17}/>{busyReport === 'share-deliveries-pdf' ? 'Preparing PDF…' : 'Share to WhatsApp'}
           </button>
         </div>
       </section>
@@ -186,6 +198,9 @@ function Reports() {
           </button>
           <button className="button" disabled={Boolean(busyReport) || !month} onClick={() => download('payments-pdf')}>
             <Download size={17}/>{busyReport === 'payments-pdf' ? 'Preparing PDF…' : 'Download PDF'}
+          </button>
+          <button className="button" disabled={Boolean(busyReport) || !month} onClick={() => sharePdf('payments-pdf')}>
+            <Send size={17}/>{busyReport === 'share-payments-pdf' ? 'Preparing PDF…' : 'Share to WhatsApp'}
           </button>
         </div>
       </section>
@@ -204,6 +219,9 @@ function Reports() {
           <button className="button" disabled={Boolean(busyReport)} onClick={() => download('customers-pdf')}>
             <Download size={17}/>{busyReport === 'customers-pdf' ? 'Preparing PDF…' : 'Download PDF'}
           </button>
+          <button className="button" disabled={Boolean(busyReport)} onClick={() => sharePdf('customers-pdf')}>
+            <Send size={17}/>{busyReport === 'share-customers-pdf' ? 'Preparing PDF…' : 'Share to WhatsApp'}
+          </button>
         </div>
       </section>
 
@@ -219,9 +237,13 @@ function Reports() {
           <button className="button" disabled={Boolean(busyReport) || !month} onClick={() => download('orders-pdf')}>
             <Download size={17}/>{busyReport === 'orders-pdf' ? 'Preparing PDF…' : 'Download PDF'}
           </button>
+          <button className="button" disabled={Boolean(busyReport) || !month} onClick={() => sharePdf('orders-pdf')}>
+            <Send size={17}/>{busyReport === 'share-orders-pdf' ? 'Preparing PDF…' : 'Share to WhatsApp'}
+          </button>
         </div>
       </section>
     </div>
+    {share && <ShareToWhatsAppModal fileName={share.filename} blob={share.blob} close={() => setShare(null)} onSent={() => setNotice('PDF sent to WhatsApp.')}/>}
   </>;
 }
 function ConflictModal({ batch, close, refresh }) {

@@ -4,7 +4,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { Provider } from 'react-redux';
 import { MemoryRouter } from 'react-router-dom';
 import NotificationsDrawer from '../components/NotificationsDrawer';
-import { CustomerHistory, CustomerPayments } from './customer/Portal';
+import { CustomerHistory, CustomerPayments, CustomerProfile } from './customer/Portal';
 import AdminPortal from './admin/AdminPortal';
 import useData from '../hooks/useData';
 import { store, signIn, api } from '../lib';
@@ -199,5 +199,72 @@ describe('New Platform Capabilities Integration Tests', () => {
     await waitFor(() => {
       expect(api.patch).toHaveBeenCalledWith('/admin/dairies/d-1/verify', { verified: true });
     });
+
+    // Admin can export/share the dairy directory PDF to WhatsApp
+    expect(screen.getByRole('button', { name: /Download PDF/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Share to WhatsApp/i })).toBeInTheDocument();
+  });
+
+  test('CustomerProfile shows verify prompts for unverified contact details', async () => {
+    useData.mockImplementation((path) => {
+      if (path.startsWith('/profile')) {
+        return {
+          data: { name: 'Meera', email: 'meera@example.com', phone: '9876543210', emailVerifiedAt: null, phoneVerifiedAt: null, status: 'active', language: 'en', updatedAt: 1, cowRatePaise: 6000, buffaloRatePaise: 8000 },
+          loading: false, error: '', reload: vi.fn()
+        };
+      }
+      return { data: [], loading: false, error: '', reload: vi.fn() };
+    });
+
+    render(
+      <Provider store={store}>
+        <MemoryRouter>
+          <CustomerProfile />
+        </MemoryRouter>
+      </Provider>
+    );
+
+    expect(await screen.findByRole('button', { name: /Verify email/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Verify mobile number/i })).toBeInTheDocument();
+
+    // Opening the mobile verification flow sends a code over WhatsApp
+    fireEvent.click(screen.getByRole('button', { name: /Verify mobile number/i }));
+    expect(await screen.findByText(/send a 6-digit code to your mobile number on WhatsApp/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Send code/i }));
+    await waitFor(() => {
+      expect(api.post).toHaveBeenCalledWith('/profile/verification/request', { channel: 'phone' });
+    });
+
+    // Entering the code confirms the verification
+    const otpInput = await screen.findByLabelText(/6-digit code/i);
+    fireEvent.change(otpInput, { target: { value: '123456' } });
+    fireEvent.click(screen.getByRole('button', { name: /^Verify$/i }));
+    await waitFor(() => {
+      expect(api.post).toHaveBeenCalledWith('/profile/verification/confirm', { channel: 'phone', otp: '123456' });
+    });
+  });
+
+  test('CustomerProfile shows Verified badges when contact details are verified', async () => {
+    useData.mockImplementation((path) => {
+      if (path.startsWith('/profile')) {
+        return {
+          data: { name: 'Meera', email: 'meera@example.com', phone: '9876543210', emailVerifiedAt: '2026-10-01T00:00:00.000Z', phoneVerifiedAt: '2026-10-01T00:00:00.000Z', status: 'active', language: 'en', updatedAt: 1 },
+          loading: false, error: '', reload: vi.fn()
+        };
+      }
+      return { data: [], loading: false, error: '', reload: vi.fn() };
+    });
+
+    render(
+      <Provider store={store}>
+        <MemoryRouter>
+          <CustomerProfile />
+        </MemoryRouter>
+      </Provider>
+    );
+
+    expect(await screen.findAllByText('Verified')).toHaveLength(2);
+    expect(screen.queryByRole('button', { name: /Verify email/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Verify mobile number/i })).not.toBeInTheDocument();
   });
 });

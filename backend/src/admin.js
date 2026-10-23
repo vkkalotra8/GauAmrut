@@ -1,10 +1,13 @@
 const express = require('express');
 const { User, Milkman, Customer, Record, Audit, Dispute, AdminSetting } = require('./models');
-const { AppError } = require('./domain');
+const { AppError, today } = require('./domain');
 const { wrap, validate } = require('./middleware');
 const { permissionsFor } = require('./admin-permissions');
 const schemas = require('./validation');
 const { SECTION_SCHEMAS } = require('./settings');
+const { sendVerificationRequest } = require('./verification');
+const whatsapp = require('./whatsapp');
+const { generateReportPdf } = require('./pdf');
 
 const permit = permission => (req, _res, next) =>
   permissionsFor(req.user).includes(permission)
@@ -81,6 +84,8 @@ function adminRoutes() {
       detail.profile = customer ? {
         name: customer.name, phone: customer.phone, address: customer.address, status: customer.status,
         startDate: customer.startDate, cowRatePaise: customer.cowRatePaise, buffaloRatePaise: customer.buffaloRatePaise,
+        emailVerified: !!(customer.emailVerifiedAt || (customer.user_id && customer.email && customer.email === user.email)),
+        phoneVerified: !!customer.phoneVerifiedAt,
         dairyName: dairy?.businessName || null
       } : null;
       detail.stats = { deliveries, disputes };
@@ -189,6 +194,20 @@ function adminRoutes() {
     res.json({ success: true, data: { _id: user._id, role: user.role, adminRole: user.adminRole } });
   }));
 
+  // Ask a customer to verify their contact details: sends fresh codes for the
+  // requested channels (email via SMTP, mobile number via WhatsApp) and adds an
+  // in-app notification telling them where to enter the code.
+  router.post('/users/:id/verification-request', permit('users.manage'), validate(schemas.verificationChannels), wrap(async (req, res) => {
+    const user = await User.findById(req.params.id).select('name email role milkman_id customer_id').lean();
+    if (!user) throw new AppError(404, 'NOT_FOUND', 'User was not found.');
+    if (user.role !== 'customer' || !user.customer_id) throw new AppError(409, 'NOT_A_CUSTOMER', 'Verification requests can only be sent to customer accounts.');
+    const customer = await Customer.findById(user.customer_id).lean();
+    if (!customer) throw new AppError(404, 'NOT_FOUND', 'Customer profile was not found.');
+    const data = await sendVerificationRequest(customer, user, req.body.channels);
+    await Audit.create([{ actor: req.user._id, action: 'admin.customer.verification.requested', target: String(customer._id), requestId: req.requestId, before: null, after: data }]);
+    res.json({ success: true, data });
+  }));
+
   // Verify / unverify dairy
   router.patch('/dairies/:id/verify', permit('dairies.manage'), wrap(async (req, res) => {
     const dairy = await Milkman.findById(req.params.id);
@@ -208,6 +227,46 @@ function adminRoutes() {
     }]);
 
     res.json({ success: true, data: { _id: dairy._id, verified: dairy.verified } });
+  }));
+
+  // WhatsApp connection for free OTP and PDF delivery: one linked session per
+  // deployment, started by scanning a QR code from this console.
+  router.get('/whatsapp/status', permit('settings.read'), wrap(async (_req, res) => res.json({ success: true, data: await whatsapp.status() })));
+  router.post('/whatsapp/qr', permit('settings.manage'), wrap(async (_req, res) => {
+    const qr = await whatsapp.getQr();
+    if (!qr) throw new AppError(409, 'WHATSAPP_ALREADY_CONNECTED', 'WhatsApp is already connected.');
+    res.json({ success: true, data: { qr } });
+  }));
+  router.post('/whatsapp/disconnect', permit('settings.manage'), wrap(async (_req, res) => {
+    await whatsapp.disconnect();
+    res.json({ success: true, data: { message: 'WhatsApp has been disconnected.' } });
+  }));
+
+  // Platform dairy directory as a PDF (downloadable and shareable to WhatsApp).
+  router.get('/dairies.pdf', permit('dairies.read'), wrap(async (_req, res) => {
+    const dairies = await Milkman.find().select('businessName name phone code verified').sort({ createdAt: -1 }).lean();
+    const [owners, counts] = await Promise.all([
+      User.find({ role: 'milkman' }).select('email milkman_id').lean(),
+      Customer.aggregate([{ $group: { _id: '$milkman_id', customers: { $sum: 1 } } }])
+    ]);
+    const ownerMap = new Map(owners.map(o => [String(o.milkman_id), o.email]));
+    const countMap = new Map(counts.map(c => [String(c._id), c.customers]));
+    const rows = dairies.map(d => [d.businessName || '-', ownerMap.get(String(d._id)) || '-', d.phone || '-', d.code || '-', d.verified ? 'Verified' : 'Pending', String(countMap.get(String(d._id)) || 0)]);
+    const buffer = await generateReportPdf({
+      title: 'Dairy directory',
+      dairyName: 'GauAmrut platform',
+      period: today(),
+      subtitle: `${dairies.length} registered dairies`,
+      columns: [
+        { label: 'Dairy', width: 105 }, { label: 'Owner email', width: 135 }, { label: 'Phone', width: 85 },
+        { label: 'Code', width: 70 }, { label: 'Status', width: 55 }, { label: 'Customers', width: 49, align: 'right' }
+      ],
+      rows,
+      summary: [`${dairies.length} dairies on the platform`, `Total customers: ${[...countMap.values()].reduce((n, v) => n + v, 0)}`]
+    });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', 'attachment; filename="gauamrut-dairy-directory.pdf"');
+    res.send(buffer);
   }));
 
   // Platform-wide Disputes

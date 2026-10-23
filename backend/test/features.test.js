@@ -3,7 +3,7 @@ const mongoose = require('mongoose');
 const zlib = require('zlib');
 const { MongoMemoryReplSet } = require('mongodb-memory-server');
 const { createApp } = require('../src/app');
-const { User, Milkman, Customer, Bill, Payment, Record, Dispute, DeliveryAdjustment, Notification, AdminSetting } = require('../src/models');
+const { User, Milkman, Customer, Bill, Record } = require('../src/models');
 const { createNotification } = require('../src/notifications');
 const { pdfText } = require('../src/pdf');
 const jwt = require('jsonwebtoken');
@@ -32,7 +32,7 @@ process.env.JWT_SECRET = '12345678901234567890123456789012';
 process.env.CORS_ORIGINS = 'http://127.0.0.1:5173';
 
 let replSet, app;
-let vendorToken, customerToken, superAdminToken, operationsToken;
+let vendorToken, customerToken, superAdminToken;
 let vendorUser, customerUser, superAdminUser, operationsUser;
 let milkmanDoc, customerDoc, testBill;
 const makeToken = user => jwt.sign({ sv: 0 }, process.env.JWT_SECRET, { subject: String(user._id), issuer: 'gauamrut', algorithm: 'HS256' });
@@ -60,7 +60,6 @@ beforeAll(async () => {
     adminRole: 'operations',
     name: 'Operations Admin'
   });
-  operationsToken = makeToken(operationsUser);
 
   // Create vendor
   const milkmanId = new mongoose.Types.ObjectId();

@@ -9,6 +9,7 @@ import { usePlatformSettings } from '../../platform';
 import { Empty, Field, Heading, Notice, State, Modal } from '../../components/ui';
 import { MilkTrend } from '../../components/charts';
 import { demoProducts, demoOrders, demoDisputes } from '../../demo';
+import ShareToWhatsAppModal from '../../components/ShareToWhatsApp';
 
 export function CustomerHome() {
   const { t } = useTranslation();
@@ -371,15 +372,31 @@ export function CustomerPayments() {
     }
   }
 
+  async function fetchBillPdf(billId, month) {
+    const r = await api.get(`/bills/${billId}/pdf`, { responseType: 'blob' });
+    return { blob: r.data, filename: `bill-${month}.pdf` };
+  }
+
+  const [shareBill, setShareBill] = useState(null);
+
   async function downloadBillPdf(billId, month) {
     try {
-      const r = await api.get(`/bills/${billId}/pdf`, { responseType: 'blob' });
-      const url = URL.createObjectURL(r.data);
+      const { blob, filename } = await fetchBillPdf(billId, month);
+      const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `bill-${month}.pdf`;
+      a.download = filename;
       a.click();
       URL.revokeObjectURL(url);
+    } catch (err) {
+      setNotice(message(err));
+    }
+  }
+
+  async function shareBillPdf(billId, month) {
+    try {
+      const { blob, filename } = await fetchBillPdf(billId, month);
+      setShareBill({ blob, filename });
     } catch (err) {
       setNotice(message(err));
     }
@@ -452,6 +469,14 @@ export function CustomerPayments() {
                           onClick={() => downloadBillPdf(b._id, b.month)}
                         >
                           <Download size={14} /> PDF
+                        </button>
+                        <button
+                          type="button"
+                          className="text-button"
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', marginLeft: '8px' }}
+                          onClick={() => shareBillPdf(b._id, b.month)}
+                        >
+                          <Send size={14} /> WhatsApp
                         </button>
                       </td>
                     </tr>
@@ -765,13 +790,80 @@ export function CustomerPayments() {
           </div>
         </Modal>
       )}
+
+      {shareBill && (
+        <ShareToWhatsAppModal
+          fileName={shareBill.filename}
+          blob={shareBill.blob}
+          caption={`Monthly milk bill (${shareBill.filename.replace('bill-', '').replace('.pdf', '')})`}
+          close={() => setShareBill(null)}
+          onSent={() => setNotice('Bill PDF sent to WhatsApp.')}
+        />
+      )}
     </>
   );
 }
 
+function VerifyContactModal({ channel, close, reload }) {
+  const { t } = useTranslation();
+  const [step, setStep] = useState('intro'), [busy, setBusy] = useState(false), [error, setError] = useState(''), [devOtp, setDevOtp] = useState('');
+  const isPhone = channel === 'phone';
+  async function sendCode() {
+    setBusy(true);
+    setError('');
+    try {
+      const { data } = await api.post('/profile/verification/request', { channel });
+      setDevOtp(data.data.developmentOtp || '');
+      setStep('code');
+    } catch (err) {
+      setError(message(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function confirm(e) {
+    e.preventDefault();
+    setBusy(true);
+    setError('');
+    try {
+      const otp = new FormData(e.currentTarget).get('otp');
+      await api.post('/profile/verification/confirm', { channel, otp });
+      close();
+      reload();
+    } catch (err) {
+      setError(message(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+  return <Modal title={isPhone ? t('customerPortal.verifyMobileTitle', 'Verify mobile number') : t('customerPortal.verifyEmailTitle', 'Verify email')} close={close}>
+    {step === 'intro' ? <>
+      <p className="form-note">{isPhone
+        ? t('customerPortal.verifyPhoneIntro', 'We will send a 6-digit code to your mobile number on WhatsApp. Enter it on this page to prove the number is yours.')
+        : t('customerPortal.verifyEmailIntro', 'We will email a 6-digit code to your registered email address. Enter it on this page to confirm it.')}</p>
+      {error && <Notice error>{error}</Notice>}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '16px' }}>
+        <button type="button" className="button" onClick={close}>{t('common.cancel', 'Cancel')}</button>
+        <button type="button" className="button primary" disabled={busy} onClick={sendCode}>{busy ? t('common.loading', 'Sending…') : t('customerPortal.sendCode', 'Send code')}</button>
+      </div>
+    </> : <form onSubmit={confirm}>
+      <p className="form-note">{isPhone
+        ? t('customerPortal.codeSentPhone', 'A 6-digit code was sent to your mobile number on WhatsApp. Enter it below.')
+        : t('customerPortal.codeSentEmail', 'A 6-digit code was emailed to your registered email address. Enter it below.')}</p>
+      {devOtp && <Notice>Development code: <b>{devOtp}</b></Notice>}
+      <Field label={t('customerPortal.enterCode', '6-digit code')} name="otp" inputMode="numeric" pattern="\d{6}" maxLength={6} required autoFocus/>
+      {error && <Notice error>{error}</Notice>}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '16px' }}>
+        <button type="button" className="button" onClick={() => { setStep('intro'); setError(''); }}>{t('common.cancel', 'Cancel')}</button>
+        <button type="submit" className="button primary" disabled={busy}>{busy ? t('common.saving', 'Saving…') : t('customerPortal.verifyNow', 'Verify')}</button>
+      </div>
+    </form>}
+  </Modal>;
+}
+
 export function CustomerProfile() {
   const { t, i18n } = useTranslation();
-  const resource = useData('/profile'), dispatch = useDispatch(), [notice, setNotice] = useState(''), [error, setError] = useState(''), [busy, setBusy] = useState(false);
+  const resource = useData('/profile'), dispatch = useDispatch(), [notice, setNotice] = useState(''), [error, setError] = useState(''), [busy, setBusy] = useState(false), [verifyChannel, setVerifyChannel] = useState(null);
   const platform = usePlatformSettings();
   async function save(e) {
     e.preventDefault();
@@ -792,7 +884,7 @@ export function CustomerProfile() {
       setBusy(false);
     }
   }
-  return <><Heading title={t('customerPortal.profileTitle', 'Your profile')} description={t('customerPortal.profileDescription', 'Keep your name, delivery address, and language preference up to date.')}/><Notice>{notice}</Notice><Notice error>{error}</Notice><State resource={resource}>{resource.data && <section className="card profile-card"><form onSubmit={save} key={resource.data.updatedAt}><Field label="Your name" name="name" defaultValue={resource.data.name} minLength={2} required/><Field label="Delivery address" name="address" defaultValue={resource.data.address}/><label className="field"><span>{t('customerPortal.preferredLanguage', 'Preferred language')}</span><select name="language" defaultValue={resource.data.language || i18n.language}><option value="en">English</option><option value="hi">हिन्दी (Hindi)</option><option value="gu">ગુજરાતી (Gujarati)</option></select></label><p className="form-note">Verified email: {resource.data.email}<br/>Cow milk: {money(resource.data.cowRatePaise)} / L · Buffalo milk: {money(resource.data.buffaloRatePaise)} / L<br/>Service: {resource.data.status}</p>{(platform?.support?.email || platform?.support?.phone) && <p className="form-note">Platform support: {[platform.support.email, platform.support.phone].filter(Boolean).join(' · ')}</p>}<button className="button primary" disabled={busy}>{busy ? t('common.saving', 'Saving…') : t('customerPortal.saveProfile', 'Save profile')}</button></form></section>}</State></>;
+  return <><Heading title={t('customerPortal.profileTitle', 'Your profile')} description={t('customerPortal.profileDescription', 'Keep your name, delivery address, and language preference up to date.')}/><Notice>{notice}</Notice><Notice error>{error}</Notice><State resource={resource}>{resource.data && <section className="card profile-card"><form onSubmit={save} key={resource.data.updatedAt}><Field label="Your name" name="name" defaultValue={resource.data.name} minLength={2} required/><Field label="Delivery address" name="address" defaultValue={resource.data.address}/><label className="field"><span>{t('customerPortal.preferredLanguage', 'Preferred language')}</span><select name="language" defaultValue={resource.data.language || i18n.language}><option value="en">English</option><option value="hi">हिन्दी (Hindi)</option><option value="gu">ગુજરાતી (Gujarati)</option></select></label><div className="verify-list"><div className="verify-row"><span><b>{t('customerPortal.contactEmail', 'Email')}</b> · {resource.data.email || t('customerPortal.noEmailOnRecord', 'no email on record')}</span>{resource.data.emailVerifiedAt ? <span className="status"><Check size={13}/> {t('customerPortal.verified', 'Verified')}</span> : resource.data.email && <button type="button" className="text-button" onClick={() => setVerifyChannel('email')}>{t('customerPortal.verifyEmailCta', 'Verify email')}</button>}</div><div className="verify-row"><span><b>{t('customerPortal.contactMobile', 'Mobile number')}</b> · {resource.data.phone || t('customerPortal.noMobileOnRecord', 'ask your dairy to add your number')}</span>{resource.data.phoneVerifiedAt ? <span className="status"><Check size={13}/> {t('customerPortal.verified', 'Verified')}</span> : resource.data.phone && <button type="button" className="text-button" onClick={() => setVerifyChannel('phone')}>{t('customerPortal.verifyMobileCta', 'Verify mobile number')}</button>}</div></div><p className="form-note">Cow milk: {money(resource.data.cowRatePaise)} / L · Buffalo milk: {money(resource.data.buffaloRatePaise)} / L<br/>Service: {resource.data.status}</p>{(platform?.support?.email || platform?.support?.phone) && <p className="form-note">Platform support: {[platform.support.email, platform.support.phone].filter(Boolean).join(' · ')}</p>}<button className="button primary" disabled={busy}>{busy ? t('common.saving', 'Saving…') : t('customerPortal.saveProfile', 'Save profile')}</button></form></section>}</State>{verifyChannel && resource.data && <VerifyContactModal channel={verifyChannel} close={() => setVerifyChannel(null)} reload={resource.reload}/>}</>;
 }
 
 export function CustomerOrders() {

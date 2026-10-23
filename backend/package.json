@@ -15,6 +15,7 @@
     "node": ">=22 <25"
   },
   "dependencies": {
+    "@whiskeysockets/baileys": "^6.7.24",
     "bcryptjs": "^3.0.2",
     "cors": "^2.8.5",
     "dotenv": "^16.6.1",
@@ -27,6 +28,7 @@
     "node-cron": "^4.6.0",
     "nodemailer": "^10.0.3",
     "pdfkit": "^0.20.2",
+    "qrcode": "^1.5.4",
     "rate-limit-redis": "^4.2.2",
     "redis": "^5.8.0"
   },
@@ -42,5 +44,9 @@
   "jest": {
     "testEnvironment": "node",
     "testTimeout": 120000
+  },
+  "allowScripts": {
+    "protobufjs@7.6.6": true,
+    "@whiskeysockets/baileys@6.7.24": true
   }
 }

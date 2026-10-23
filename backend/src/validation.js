@@ -16,6 +16,10 @@ const selfProfile = Joi.object({ name: Joi.string().trim().min(2).max(100).requi
 const vendorProfile = Joi.object({ businessName: Joi.string().trim().min(2).max(120).required(), name: Joi.string().trim().min(2).max(100).required(), phone: Joi.string().pattern(/^[+\d\s-]{7,20}$/).required(), upiId: Joi.string().trim().pattern(/^[\w.\-_]{2,256}@[a-zA-Z]{2,64}$/).allow('').default('') });
 const routeOrder = Joi.object({ shift: Joi.string().valid('morning', 'evening').required(), orders: Joi.array().min(1).max(100).items(Joi.object({ customer_id: id.required(), order: amount.required() })).required() });
 const deliveryUpdate = Joi.object({ quantityMl: amount.min(0).max(100000).required(), type: Joi.string().valid('cow', 'buffalo') });
+const verificationRequest = Joi.object({ channel: Joi.string().valid('email', 'phone').required() });
+const verificationConfirm = Joi.object({ channel: Joi.string().valid('email', 'phone').required(), otp: Joi.string().pattern(/^\d{6}$/).required() });
+const verificationChannels = Joi.object({ channels: Joi.array().min(1).max(2).items(Joi.string().valid('email', 'phone')).required() });
+const whatsappDocument = Joi.object({ number: Joi.string().pattern(/^\+?[\d\s()-]{7,20}$/).required(), fileName: Joi.string().trim().min(1).max(120).required(), caption: Joi.string().max(200).allow('').default(''), pdfBase64: Joi.string().max(6000000).required() });
 const paymentClaim = Joi.object({ bill_id: id.optional(), amountPaise: amount.min(1).required(), method: Joi.string().valid('cash', 'upi', 'bank').default('upi'), reference: Joi.string().trim().min(3).max(100).required(), notes: Joi.string().trim().max(300).allow('').default('') });
 const claimReview = Joi.object({ action: Joi.string().valid('approve', 'reject').required(), reason: Joi.string().trim().min(3).max(255).when('action', { is: 'reject', then: Joi.required(), otherwise: Joi.optional() }) });
 const paymentReversal = Joi.object({ reason: Joi.string().trim().min(3).max(255).required() });
@@ -34,6 +38,6 @@ const adminUserStatus = Joi.object({ active: Joi.boolean().required() });
 const adminUserRole = Joi.object({ role: Joi.string().valid('milkman', 'customer', 'admin').required(), adminRole: Joi.string().valid('super_admin', 'operations', 'finance', 'support').when('role', { is: 'admin', then: Joi.required(), otherwise: Joi.forbidden() }) });
 const adminDispute = Joi.object({ priority: Joi.string().valid('low', 'medium', 'high', 'urgent'), assignedTo: id.allow(null), escalated: Joi.boolean(), status: Joi.string().valid('open', 'under_review', 'resolved', 'cancelled'), resolutionNotes: Joi.string().trim().max(500) });
 const adminSetting = Joi.object({ payload: Joi.object().required() });
-module.exports = { customer, delivery, register, login, verify, payment, month, date, id, Joi, code, customerRegister, customerComplete, selfProfile, vendorProfile, routeOrder, deliveryUpdate, paymentClaim, claimReview, paymentReversal, adjustment, adjustmentReversal, product, productUpdate, order, orderStatus, dispute, disputeReply, disputeStatus, deliveryAdjustment, deliveryAdjustmentStatus, adminUserStatus, adminUserRole, adminDispute, adminSetting };
+module.exports = { customer, delivery, register, login, verify, payment, month, date, id, Joi, code, customerRegister, customerComplete, selfProfile, vendorProfile, routeOrder, deliveryUpdate, verificationRequest, verificationConfirm, verificationChannels, whatsappDocument, paymentClaim, claimReview, paymentReversal, adjustment, adjustmentReversal, product, productUpdate, order, orderStatus, dispute, disputeReply, disputeStatus, deliveryAdjustment, deliveryAdjustmentStatus, adminUserStatus, adminUserRole, adminDispute, adminSetting };
 
 

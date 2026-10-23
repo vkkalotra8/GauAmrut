@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useSelector } from 'react-redux';
 import { Navigate, NavLink, Route, Routes, useLocation } from 'react-router-dom';
-import { Cpu, Leaf, LayoutDashboard, LogOut, Megaphone, Menu, MoreHorizontal, Receipt, Scale, ScrollText, Settings as SettingsIcon, ShieldCheck, Store, UserPlus, Users, Wifi, WifiOff } from 'lucide-react';
+import { Cpu, Leaf, LayoutDashboard, LogOut, Mail, Megaphone, Menu, MoreHorizontal, QrCode, Receipt, Scale, ScrollText, Send, Settings as SettingsIcon, ShieldCheck, Store, UserPlus, Users, Wifi, WifiOff } from 'lucide-react';
 import { Brand, Empty, Field, Heading, Modal, Notice, State } from '../../components/ui';
 import useData from '../../hooks/useData';
 import { api, message } from '../../lib';
@@ -9,6 +9,7 @@ import CommandPalette from '../../components/CommandPalette';
 import LanguageSelect from '../../components/LanguageSelect';
 import ThemeToggle from '../../components/ThemeToggle';
 import AnnouncementBanner from '../../components/AnnouncementBanner';
+import ShareToWhatsAppModal from '../../components/ShareToWhatsApp';
 import { invalidatePlatformSettings } from '../../platform';
 
 const sections = [
@@ -147,6 +148,26 @@ function Overview() {
 
 function UserDetailModal({ user, close }) {
   const resource = useData(`/admin/users/${user._id}`);
+  const [requestBusy, setRequestBusy] = useState(''), [notice, setNotice] = useState(''), [error, setError] = useState('');
+  async function sendVerificationRequest(channel) {
+    setRequestBusy(channel);
+    setError('');
+    setNotice('');
+    try {
+      const { data } = await api.post(`/admin/users/${user._id}/verification-request`, { channels: [channel] });
+      const delivered = data.data?.delivered || [];
+      const skipped = data.data?.skipped || [];
+      const parts = [];
+      if (delivered.length) parts.push(`Code sent for ${delivered.join(' and ')}.`);
+      for (const s of skipped) parts.push(`${s.channel}: ${String(s.reason || '').replaceAll('_', ' ').toLowerCase()}.`);
+      setNotice(parts.join(' ') || 'Request processed.');
+      resource.reload();
+    } catch (err) {
+      setError(message(err));
+    } finally {
+      setRequestBusy('');
+    }
+  }
   const detail = resource.data && typeof resource.data === 'object' && !Array.isArray(resource.data) ? resource.data : null;
   const profile = detail?.profile && typeof detail.profile === 'object' && !Array.isArray(detail.profile) ? detail.profile : null;
   const stats = detail?.stats && typeof detail.stats === 'object' && !Array.isArray(detail.stats) ? detail.stats : null;
@@ -154,6 +175,8 @@ function UserDetailModal({ user, close }) {
   const formatDate = value => value ? new Date(value).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
   return (
     <Modal title={`Account details: ${user.name || user.email}`} close={close}>
+      <Notice>{notice}</Notice>
+      <Notice error>{error}</Notice>
       {resource.loading ? (
         <p className="form-note">Loading account details…</p>
       ) : (
@@ -182,14 +205,26 @@ function UserDetailModal({ user, close }) {
                   )}
                 </div>
               ) : (
-                <div className="detail-grid">
-                  <div><small>Dairy</small><b>{profile.dairyName || '—'}</b></div>
-                  <div><small>Phone</small><b>{profile.phone || '—'}</b></div>
-                  <div><small>Address</small><b>{profile.address || '—'}</b></div>
-                  <div><small>Service since</small><b>{formatDate(profile.startDate)}</b></div>
-                  <div><small>Cow milk rate</small><b>{(profile.cowRatePaise ?? 0) / 100} ₹ / L</b></div>
-                  <div><small>Buffalo milk rate</small><b>{(profile.buffaloRatePaise ?? 0) / 100} ₹ / L</b></div>
-                </div>
+                <>
+                  <div className="detail-grid">
+                    <div><small>Dairy</small><b>{profile.dairyName || '—'}</b></div>
+                    <div><small>Phone</small><b>{profile.phone || '—'}</b></div>
+                    <div><small>Address</small><b>{profile.address || '—'}</b></div>
+                    <div><small>Service since</small><b>{formatDate(profile.startDate)}</b></div>
+                    <div><small>Cow milk rate</small><b>{(profile.cowRatePaise ?? 0) / 100} ₹ / L</b></div>
+                    <div><small>Buffalo milk rate</small><b>{(profile.buffaloRatePaise ?? 0) / 100} ₹ / L</b></div>
+                    <div><small>Email status</small><span className={`status ${profile.emailVerified ? '' : 'neutral'}`}>{profile.emailVerified ? 'Verified' : 'Not verified'}</span></div>
+                    <div><small>Mobile status</small><span className={`status ${profile.phoneVerified ? '' : 'neutral'}`}>{profile.phoneVerified ? 'Verified' : 'Not verified'}</span></div>
+                  </div>
+                  <div className="heading-actions" style={{ marginTop: '12px' }}>
+                    <button type="button" className="button small" disabled={Boolean(requestBusy) || profile.emailVerified} onClick={() => sendVerificationRequest('email')}>
+                      <Mail size={14}/> {requestBusy === 'email' ? 'Sending…' : profile.emailVerified ? 'Email verified' : 'Request email verification'}
+                    </button>
+                    <button type="button" className="button small" disabled={Boolean(requestBusy) || profile.phoneVerified || !profile.phone} title={profile.phone ? undefined : 'Add a mobile number to the customer first'} onClick={() => sendVerificationRequest('phone')}>
+                      <Send size={14}/> {requestBusy === 'phone' ? 'Sending…' : profile.phoneVerified ? 'Mobile verified' : 'Request mobile verification'}
+                    </button>
+                  </div>
+                </>
               )}
             </div>
           )}
@@ -400,9 +435,54 @@ function DairiesView({ canManage }) {
     }
   }
 
+  const [exportBusy, setExportBusy] = useState(''), [shareDir, setShareDir] = useState(null);
+
+  async function fetchDirectoryPdf() {
+    const r = await api.get('/admin/dairies.pdf', { responseType: 'blob' });
+    return { blob: r.data, filename: 'gauamrut-dairy-directory.pdf' };
+  }
+
+  async function downloadDirectoryPdf() {
+    setExportBusy('download');
+    setError('');
+    try {
+      const { blob, filename } = await fetchDirectoryPdf();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(message(err));
+    } finally {
+      setExportBusy('');
+    }
+  }
+
+  async function shareDirectoryPdf() {
+    setExportBusy('share');
+    setError('');
+    try {
+      const { blob, filename } = await fetchDirectoryPdf();
+      setShareDir({ blob, filename });
+    } catch (err) {
+      setError(message(err));
+    } finally {
+      setExportBusy('');
+    }
+  }
+
   return (
     <>
-      <Heading eyebrow="PLATFORM ADMINISTRATION" title="Dairy directory" description="Review registered dairy businesses, verification status, and owner profiles." />
+      <Heading eyebrow="PLATFORM ADMINISTRATION" title="Dairy directory" description="Review registered dairy businesses, verification status, and owner profiles.">
+        <button type="button" className="button" disabled={Boolean(exportBusy)} onClick={downloadDirectoryPdf}>
+          Download PDF
+        </button>
+        <button type="button" className="button" disabled={Boolean(exportBusy)} onClick={shareDirectoryPdf}>
+          <Send size={16}/> {exportBusy === 'share' ? 'Preparing PDF…' : 'Share to WhatsApp'}
+        </button>
+      </Heading>
       <Notice>{notice}</Notice>
       <Notice error>{error}</Notice>
       <section className="card">
@@ -460,6 +540,15 @@ function DairiesView({ canManage }) {
           <button className="button" disabled={page * 25 >= (resource.meta?.total || 0)} onClick={() => setPage(n => n + 1)}>Next</button>
         </div>
       </section>
+      {shareDir && (
+        <ShareToWhatsAppModal
+          fileName={shareDir.filename}
+          blob={shareDir.blob}
+          caption="GauAmrut dairy directory"
+          close={() => setShareDir(null)}
+          onSent={() => setNotice('Dairy directory PDF sent to WhatsApp.')}
+        />
+      )}
     </>
   );
 }
@@ -734,6 +823,103 @@ function SettingCard({ section, doc, canManage, onSaved }) {
   );
 }
 
+function WhatsAppCard({ canManage }) {
+  const [status, setStatus] = useState(null), [busy, setBusy] = useState(''), [error, setError] = useState(''), [qr, setQr] = useState('');
+
+  async function loadStatus() {
+    try {
+      const { data } = await api.get('/admin/whatsapp/status');
+      setStatus(data.data);
+    } catch (err) {
+      setError(message(err));
+    }
+  }
+  useEffect(() => { loadStatus(); }, []);
+
+  function pollUntilConnected() {
+    let attempts = 0;
+    const timer = setInterval(async () => {
+      attempts += 1;
+      try {
+        const { data } = await api.get('/admin/whatsapp/status');
+        setStatus(data.data);
+        if (data.data.connected || attempts >= 40) clearInterval(timer);
+        if (data.data.connected) setQr('');
+      } catch {
+        clearInterval(timer);
+      }
+    }, 3000);
+  }
+
+  async function showQr() {
+    setBusy('qr');
+    setError('');
+    try {
+      const { data } = await api.post('/admin/whatsapp/qr');
+      setQr(data.data.qr);
+      pollUntilConnected();
+    } catch (err) {
+      setError(message(err));
+    } finally {
+      setBusy('');
+    }
+  }
+
+  async function disconnect() {
+    setBusy('disconnect');
+    setError('');
+    try {
+      await api.post('/admin/whatsapp/disconnect');
+      setQr('');
+      await loadStatus();
+    } catch (err) {
+      setError(message(err));
+    } finally {
+      setBusy('');
+    }
+  }
+
+  return (
+    <section className="card">
+      <div className="card-heading">
+        <div>
+          <h2>WhatsApp connection</h2>
+          <p className="form-note">Link a WhatsApp account once and verification codes and PDF documents go to customer numbers at no cost. On the phone: WhatsApp → Linked devices → Link a device, then scan the code below.</p>
+        </div>
+      </div>
+      <Notice error>{error}</Notice>
+      {status ? (
+        <div className="detail-grid" style={{ marginBottom: qr ? '12px' : 0 }}>
+          <div><small>Status</small><span className={`status ${status.connected ? '' : 'neutral'}`}>{status.connected ? 'Connected' : 'Not connected'}</span></div>
+          {status.connected && status.phone && <div><small>Linked number</small><b>+{status.phone}</b></div>}
+        </div>
+      ) : (
+        <p className="form-note">Loading connection status…</p>
+      )}
+      {qr && (
+        <div style={{ textAlign: 'center' }}>
+          <img src={qr} alt="WhatsApp linking QR code" style={{ width: 240, height: 240, borderRadius: 12, border: '1px solid var(--border, #e3ebe4)' }}/>
+          <p className="form-note">Waiting for the phone to scan this code…</p>
+        </div>
+      )}
+      {canManage && (
+        <div className="heading-actions">
+          {!status?.connected && (
+            <button type="button" className="button primary" disabled={Boolean(busy)} onClick={showQr}>
+              <QrCode size={16}/> {busy === 'qr' ? 'Preparing code…' : qr ? 'Refresh QR code' : 'Show QR code'}
+            </button>
+          )}
+          {status?.connected && (
+            <button type="button" className="button" disabled={Boolean(busy)} onClick={disconnect}>
+              {busy === 'disconnect' ? 'Disconnecting…' : 'Disconnect'}
+            </button>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function SettingsView({ canManage }) {
   const resource = useData('/admin/settings');
   const [notice, setNotice] = useState('');
@@ -769,6 +955,7 @@ function SettingsView({ canManage }) {
           )}
         </>
       </State>
+      <WhatsAppCard canManage={canManage}/>
     </>
   );
 }
