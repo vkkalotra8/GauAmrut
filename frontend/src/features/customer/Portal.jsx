@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { NavLink, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
@@ -1354,6 +1354,26 @@ export function CustomerDisputes() {
       setActiveDispute(d);
     }
   }
+
+  // Live thread: poll the open conversation so the dairy's replies appear
+  // without a refresh. Paused while typing or when the tab is hidden.
+  useEffect(() => {
+    if (!activeDispute?._id || demo) return;
+    const id = activeDispute._id;
+    const tick = async () => {
+      if (document.hidden) return;
+      if (document.activeElement && document.activeElement.tagName === 'TEXTAREA') return;
+      try {
+        const res = await api.get(`/disputes/${id}`);
+        const fresh = res.data.data;
+        setActiveDispute(prev => (prev && prev._id === id && (fresh.replies?.length || 0) > (prev.replies?.length || 0) ? fresh : prev));
+      } catch {
+        // Keep the last good thread on a transient poll failure.
+      }
+    };
+    const interval = setInterval(tick, 7000);
+    return () => clearInterval(interval);
+  }, [activeDispute?._id, demo]);
 
   async function handleCreateDispute(e) {
     e.preventDefault();

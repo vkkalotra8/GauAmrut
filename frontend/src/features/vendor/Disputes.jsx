@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useSelector } from 'react-redux';
 import { useTranslation } from 'react-i18next';
 import { MessageSquare, AlertCircle, CheckCircle2, XCircle, Send, ShieldCheck, Clock } from 'lucide-react';
@@ -39,6 +39,27 @@ export default function Disputes() {
       setActiveDispute(d);
     }
   }
+
+  // Live thread: while the modal is open, poll for new replies so the other
+  // party's messages appear without a manual refresh. Skips while typing or the
+  // tab is hidden.
+  useEffect(() => {
+    if (!activeDispute?._id || demo) return;
+    const id = activeDispute._id;
+    const tick = async () => {
+      if (document.hidden) return;
+      if (document.activeElement && document.activeElement.tagName === 'TEXTAREA') return;
+      try {
+        const res = await api.get(`/disputes/${id}`);
+        const fresh = res.data.data;
+        setActiveDispute(prev => (prev && prev._id === id && (fresh.replies?.length || 0) > (prev.replies?.length || 0) ? fresh : prev));
+      } catch {
+        // Keep the last good thread on a transient poll failure.
+      }
+    };
+    const interval = setInterval(tick, 7000);
+    return () => clearInterval(interval);
+  }, [activeDispute?._id, demo]);
 
   // Send reply
   async function handleSendReply(e) {
