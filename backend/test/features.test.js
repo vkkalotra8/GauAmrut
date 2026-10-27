@@ -241,12 +241,15 @@ describe('New SRS Features Integration Tests', () => {
   });
 
   describe('PDF Generation & Additional CSV Reports', () => {
-    it('sanitises emoji and unsupported symbols for standard PDF fonts', () => {
-      expect(pdfText('Jay Dwarkadish 💜')).toBe('Jay Dwarkadish');
+    it('keeps emoji, ₹ and Indian scripts in PDF text, dropping only control characters', () => {
+      expect(pdfText('Jay Dwarkadish 💜')).toBe('Jay Dwarkadish 💜');
       expect(pdfText('Café Müller')).toBe('Café Müller');
+      expect(pdfText('ગૌ અમૃત')).toBe('ગૌ અમૃત');
       expect(pdfText('  spaced   out  ')).toBe('spaced out');
       expect(pdfText('', 'Fallback')).toBe('Fallback');
-      expect(pdfText('Milk ₹100 & Co')).toBe('Milk 100 & Co'); // ₹ has no WinAnsi glyph
+      expect(pdfText('Milk ₹100 & Co')).toBe('Milk ₹100 & Co'); // ₹ is embedded, not stripped
+      expect(pdfText('tab\there')).toBe('tab here');
+      expect(pdfText('bell\u0007end')).toBe('bellend'); // no visual form in a PDF
     });
 
     it('generates PDF invoice buffer for a monthly bill', async () => {
@@ -260,7 +263,21 @@ describe('New SRS Features Integration Tests', () => {
       expect(res.body.length).toBeGreaterThan(500);
     });
 
-    it('heads the bill PDF with the dairy name, watermarks GauAmrut, and strips emoji from names', async () => {
+    it('heads the bill PDF with the dairy name, watermarks GauAmrut, and shows the customer name', async () => {
+      await Customer.updateOne({ _id: customerDoc._id }, { name: 'Ramesh Patel' });
+      const res = await request(app)
+        .get(`/api/bills/${testBill._id}/pdf`)
+        .set('Authorization', `Bearer ${vendorToken}`);
+
+      expect(res.status).toBe(200);
+      const content = pdfContent(res.body);
+      expect(content).toContain('GauAmrut Organic Farm'); // dairy name is the heading
+      expect(content).not.toContain('GAUAMRUT'); // the old fixed heading is gone
+      expect((content.match(/GauAmrut/g) || []).length).toBeGreaterThanOrEqual(3); // heading + footer + watermark
+      expect(content).toContain('Ramesh Patel'); // plain names stay real, searchable text
+    });
+
+    it('renders emoji in a name as embedded glyphs instead of stripping or mangling them', async () => {
       await Customer.updateOne({ _id: customerDoc._id }, { name: 'Ramesh 😀 Patel' });
       try {
         const res = await request(app)
@@ -268,11 +285,15 @@ describe('New SRS Features Integration Tests', () => {
           .set('Authorization', `Bearer ${vendorToken}`);
 
         expect(res.status).toBe(200);
+        expect(res.body).toBeInstanceOf(Buffer);
         const content = pdfContent(res.body);
-        expect(content).toContain('GauAmrut Organic Farm'); // dairy name is the heading
-        expect(content).not.toContain('GAUAMRUT'); // the old fixed heading is gone
-        expect((content.match(/GauAmrut/g) || []).length).toBeGreaterThanOrEqual(3); // heading + footer + watermark
-        expect(content).toContain('Ramesh Patel'); // emoji stripped, not rendered as mojibake
+        // The emoji is drawn: pdfkit embedded its outline and recorded it in the
+        // PDF's ToUnicode table as the UTF-16BE surrogate pair <d83d de00>
+        // (U+1F600). The old WinAnsi-only path could not do this — it dropped the
+        // character or emitted mojibake — so this is the regression guard.
+        expect(content).toMatch(/<d83d\s+de00>/i);
+        // The emoji must not turn into WinAnsi mojibake next to the name.
+        expect(content).not.toContain('Ø=Üçø');
       } finally {
         await Customer.updateOne({ _id: customerDoc._id }, { name: 'Ramesh Patel' });
       }
