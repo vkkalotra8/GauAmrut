@@ -1,10 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useSelector } from 'react-redux';
 import { Navigate, NavLink, Route, Routes, useLocation } from 'react-router-dom';
-import { Cpu, Leaf, LayoutDashboard, LogOut, Mail, Megaphone, Menu, MoreHorizontal, QrCode, Receipt, Scale, ScrollText, Send, Settings as SettingsIcon, ShieldCheck, Store, UserPlus, Users, Wifi, WifiOff } from 'lucide-react';
+import { BarChart3, Cpu, Download, Leaf, LayoutDashboard, LogOut, Mail, Megaphone, Menu, MoreHorizontal, QrCode, Receipt, Scale, ScrollText, Send, Settings as SettingsIcon, ShieldCheck, Store, UserPlus, Users, Wifi, WifiOff } from 'lucide-react';
 import { Brand, Empty, Field, Heading, Modal, Notice, State } from '../../components/ui';
 import useData from '../../hooks/useData';
-import { api, message } from '../../lib';
+import { api, message, serviceDate } from '../../lib';
 import CommandPalette from '../../components/CommandPalette';
 import LanguageSelect from '../../components/LanguageSelect';
 import ThemeToggle from '../../components/ThemeToggle';
@@ -17,6 +17,7 @@ const sections = [
   { path: '/admin/users', name: 'Users', short: 'Users', icon: Users, permission: 'users.read' },
   { path: '/admin/dairies', name: 'Dairies', short: 'Dairies', icon: Store, permission: 'dairies.read' },
   { path: '/admin/disputes', name: 'Disputes', short: 'Issues', icon: Scale, permission: 'disputes.read' },
+  { path: '/admin/reports', name: 'Reports', short: 'Reports', icon: BarChart3, permission: 'reports.read' },
   { path: '/admin/settings', name: 'Settings', short: 'Settings', icon: SettingsIcon, permission: 'settings.read' },
   { path: '/admin/activity', name: 'Activity log', short: 'Activity', icon: ScrollText, permission: 'audit.read' }
 ];
@@ -920,6 +921,102 @@ function WhatsAppCard({ canManage }) {
   );
 }
 
+function ReportsView() {
+  const [month, setMonth] = useState(serviceDate().slice(0, 7));
+  const [busy, setBusy] = useState('');
+  const [error, setError] = useState('');
+
+  // Platform-wide exports spanning every dairy. Deliveries, payments, bills and
+  // orders are month-scoped; the customer directory is all-time with till-date
+  // balances, mirroring the dairy-facing reports but across all tenants.
+  const reports = useMemo(() => [
+    { id: 'deliveries', label: 'Deliveries', description: 'Every milk delivery across all dairies for the month, with dairy, customer, quantity, rate and charge.', monthScoped: true, icon: '🥛' },
+    { id: 'payments', label: 'Payments', description: 'All customer payments recorded across all dairies for the month, with mode, reference and amount.', monthScoped: true, icon: '💳' },
+    { id: 'bills', label: 'Bills', description: 'Monthly bills raised across all dairies, with opening, charges, paid and closing balances.', monthScoped: true, icon: '🧾' },
+    { id: 'orders', label: 'Store orders', description: 'Product orders placed across all dairies for the month, with items, status and order value.', monthScoped: true, icon: '🛒' },
+    { id: 'customers', label: 'Customer directory', description: 'Every registered customer across all dairies, with rates and till-date outstanding balances.', monthScoped: false, icon: '👥' }
+  ], []);
+
+  function endpointFor(report, format) {
+    return `/admin/reports/${report.id}.${format}${report.monthScoped ? `?month=${month}` : ''}`;
+  }
+
+  async function downloadBlob(endpoint, filename) {
+    const r = await api.get(endpoint, { responseType: 'blob' });
+    const url = URL.createObjectURL(r.data);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function handleDownload(report, format) {
+    setBusy(`${report.id}-${format}`);
+    setError('');
+    try {
+      const name = report.monthScoped ? `gauamrut-${report.id}-${month}.${format}` : `gauamrut-${report.id}.${format}`;
+      await downloadBlob(endpointFor(report, format), name);
+    } catch (err) {
+      setError(message(err));
+    } finally {
+      setBusy('');
+    }
+  }
+
+  return (
+    <>
+      <Heading
+        eyebrow="PLATFORM REPORTS"
+        title="Reports"
+        description="Download platform-wide reports spanning every dairy. Month-scoped reports reflect the selected reporting month; the customer directory is all-time with till-date balances."
+      />
+
+      <Notice error>{error}</Notice>
+
+      <section className="card" style={{ marginBottom: '18px' }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '14px', alignItems: 'flex-end' }}>
+          <Field label="Reporting month" type="month" value={month} max={serviceDate().slice(0, 7)} onChange={e => setMonth(e.target.value)} />
+          <p style={{ color: 'var(--muted)', fontSize: '13px', maxWidth: '420px', margin: 0 }}>
+            Applies to deliveries, payments, bills and store orders. The customer directory always covers all registered customers.
+          </p>
+        </div>
+      </section>
+
+      <div className="reports-grid">
+        {reports.map(report => (
+          <section key={report.id} className="card report-card">
+            <span className="report-icon">{report.icon}</span>
+            <h2>{report.label}</h2>
+            <p>{report.description}</p>
+            {report.monthScoped && (
+              <div className="report-note"><small>Reporting month: {month}</small></div>
+            )}
+            <div className="heading-actions">
+              <button
+                type="button"
+                className="button primary"
+                disabled={Boolean(busy) || (report.monthScoped && !month)}
+                onClick={() => handleDownload(report, 'csv')}
+              >
+                <Download size={17} />{busy === `${report.id}-csv` ? 'Preparing…' : 'Download CSV'}
+              </button>
+              <button
+                type="button"
+                className="button"
+                disabled={Boolean(busy) || (report.monthScoped && !month)}
+                onClick={() => handleDownload(report, 'pdf')}
+              >
+                <Download size={17} />{busy === `${report.id}-pdf` ? 'Preparing…' : 'Download PDF'}
+              </button>
+            </div>
+          </section>
+        ))}
+      </div>
+    </>
+  );
+}
+
 function SettingsView({ canManage }) {
   const resource = useData('/admin/settings');
   const [notice, setNotice] = useState('');
@@ -1087,6 +1184,7 @@ export default function AdminPortal({ logout, error }) {
             <Route path="/admin/users" element={<UsersView canManage={canManageUsers} />} />
             <Route path="/admin/dairies" element={<DairiesView canManage={canManageDairies} />} />
             <Route path="/admin/disputes" element={<DisputesView canManage={canManageDisputes} />} />
+            <Route path="/admin/reports" element={<ReportsView />} />
             <Route path="/admin/settings" element={<SettingsView canManage={canManageSettings} />} />
             <Route path="/admin/activity" element={<ActivityView />} />
             <Route path="*" element={allowed.length ? <Navigate to={allowed[0].path} replace /> : <Notice error>No admin permissions are assigned to this account.</Notice>} />
