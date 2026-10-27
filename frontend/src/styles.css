@@ -354,7 +354,7 @@ dialog::backdrop { background: rgba(18, 40, 30, .5); backdrop-filter: blur(3px);
 .profile-card dt { color: #7b8c72; }
 .profile-card dd { margin: 0; font-weight: 500; }
 .profile-card code { background: var(--green-tint); border: 1px solid var(--border); padding: 8px 12px; letter-spacing: 2px; border-radius: 6px; font-weight: 600; }
-.receipt-card { padding: 20px; border: 1px solid var(--border); border-radius: var(--radius); background: #fdfdfd; }
+.receipt-card { padding: 20px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
 .tab-nav { display: flex; gap: 8px; margin-bottom: 20px; border-bottom: 1px solid var(--border); padding-bottom: 10px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
 .tab-nav .button { box-shadow: none; background: transparent; border-color: transparent; }
 .tab-nav .button:hover { background: var(--green-tint); }
@@ -833,6 +833,71 @@ dialog.cmdk { padding: 0; overflow: hidden; position: fixed; top: 12vh; left: 0;
 [data-theme='dark'] .role-chip.customer { background: #2b210f; border-color: #4f3f16; color: #e8c07a; }
 [data-theme='dark'] .detail-stats span { background: #142b20; border-color: #244635; }
 [data-theme='dark'] .detail-stats b { color: #8fd4ae; }
+
+/* ---------------- Themed semantic chips, strips & bubbles ----------------
+   Light-theme defaults with matching dark palettes so status pills,
+   warning strips and inline chips never render light-on-light (or
+   dark-on-dark) when the theme flips. */
+.status.success { background: #e9f5e8; color: #2e7424; border-color: #bfe0ba; }
+.status.info { background: #e8edf8; color: #28559a; border-color: #c6d5ef; }
+.status.pending { background: #fcf5e7; color: #8c6b16; border-color: #eddfb5; }
+.status.danger { background: #faeaea; color: #9a2828; border-color: #ecc7c7; }
+[data-theme='dark'] .status.success { background: #14301f; color: #8fd4a0; border-color: #2b4a37; }
+[data-theme='dark'] .status.info { background: #17233a; color: #93b7f5; border-color: #27375a; }
+[data-theme='dark'] .status.pending { background: #2b210f; color: #e8c07a; border-color: #4f3f16; }
+[data-theme='dark'] .status.danger { background: #2d1714; color: #f09083; border-color: #572a23; }
+
+.pill.success { background: #e9f5e8; color: #2e7424; border-color: #bfe0ba; }
+.pill.info { background: #e8edf8; color: #28559a; border-color: #c6d5ef; }
+.pill.pending { background: #fef3c7; color: #92400e; border-color: #fde68a; }
+.pill.danger { background: #faeaea; color: #9a2828; border-color: #ecc7c7; }
+[data-theme='dark'] .pill.success { background: #14301f; color: #8fd4a0; border-color: #2b4a37; }
+[data-theme='dark'] .pill.info { background: #17233a; color: #93b7f5; border-color: #27375a; }
+[data-theme='dark'] .pill.pending { background: #2b210f; color: #e8c07a; border-color: #4f3f16; }
+[data-theme='dark'] .pill.danger { background: #2d1714; color: #f09083; border-color: #572a23; }
+
+.danger-text { color: var(--danger); }
+.count-badge { margin-left: 6px; background: var(--accent); color: #1a2e24; border-radius: 10px; padding: 1px 6px; font-size: 10px; }
+.text-button.danger-text:hover { color: #8f3a22; }
+[data-theme='dark'] .text-button.danger-text:hover { color: #ffb3a6; }
+.button.danger-ghost { background: transparent; color: #a94d34; border-color: #f4d9cf; }
+.button.danger-ghost:hover { background: #fdf1ec; color: #8f3a22; border-color: #e8b9a8; }
+[data-theme='dark'] .button.danger-ghost { color: #f09083; border-color: #572a23; }
+[data-theme='dark'] .button.danger-ghost:hover { background: #2d1714; color: #ffb3a6; }
+.button.success-ghost { background: transparent; color: #2e7424; border-color: #cce5cb; }
+.button.success-ghost:hover { background: #eaf5e8; color: #1f5419; border-color: #a9d4a7; }
+[data-theme='dark'] .button.success-ghost { color: #8fd4a0; border-color: #2b4a37; }
+[data-theme='dark'] .button.success-ghost:hover { background: #14301f; color: #b5e8c8; }
+
+.note-strip { background: #f8fafc; border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; }
+[data-theme='dark'] .note-strip { background: #101c16; }
+.danger-note { background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 12px; color: #991b1b; }
+[data-theme='dark'] .danger-note { background: #2d1714; border-color: #572a23; color: #f09083; }
+.total-strip { background: #eaf3e8; border-radius: 6px; padding: 10px 14px; display: flex; justify-content: space-between; }
+[data-theme='dark'] .total-strip { background: #143023; }
+
+.order-item-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; padding: 8px 10px; background: #f9faf7; border: 1px solid var(--border-soft); border-radius: 8px; }
+.order-item-row select, .order-item-row input {
+  border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--ink);
+  padding: 8px 10px; min-height: 38px; font-size: 13px; min-width: 0;
+}
+.order-item-row select { flex: 1; }
+.order-item-row input { width: 65px; text-align: center; }
+.order-item-row option { background: var(--surface); color: var(--ink); }
+[data-theme='dark'] .order-item-row { background: #101c16; }
+
+.chat-bubble { border-radius: 10px; padding: 10px 14px; }
+.chat-bubble.me { background: #e8f3ea; border: 1px solid #d2e7d6; }
+.chat-bubble.other { background: #f0f3f6; border: 1px solid #dde3eb; }
+[data-theme='dark'] .chat-bubble.me { background: #143023; border-color: #2b4a37; }
+[data-theme='dark'] .chat-bubble.other { background: #17221d; border-color: #24352c; }
+
+.resolved-banner { padding: 12px 14px; background: #e9f5e8; border: 1px solid #cce5cb; border-radius: 8px; }
+.resolved-banner .resolved-title { color: #2e7424; display: flex; align-items: center; gap: 6px; font-size: 12px; }
+.resolved-banner p { font-size: 12px; margin: 6px 0 0; color: #2b5025; }
+[data-theme='dark'] .resolved-banner { background: #14301f; border-color: #2b4a37; }
+[data-theme='dark'] .resolved-banner .resolved-title { color: #8fd4a0; }
+[data-theme='dark'] .resolved-banner p { color: #a8cdb7; }
 
 /* ---------------- Accessibility ---------------- */
 @media (prefers-reduced-motion: reduce) {

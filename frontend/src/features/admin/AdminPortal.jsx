@@ -327,7 +327,7 @@ function UsersView({ canManage }) {
                       <td className="capitalize">{u.role}</td>
                       <td>
                         {u.adminRole ? (
-                          <span className="pill" style={{ background: '#eff6ff', color: '#1d4ed8', fontWeight: '600' }}>
+                          <span className="pill info" style={{ fontWeight: '600' }}>
                             {u.adminRole}
                           </span>
                         ) : '—'}

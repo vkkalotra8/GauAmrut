@@ -182,8 +182,7 @@ export default function Products() {
                           </button>
                           <button
                             type="button"
-                            className="text-button"
-                            style={{ color: '#a94d34' }}
+                            className="text-button danger-text"
                             onClick={() => setDeletingProduct(p)}
                             title="Delete product"
                           >
@@ -320,8 +319,7 @@ export default function Products() {
             </button>
             <button
               type="button"
-              className="button"
-              style={{ background: '#a94d34', color: '#fff', borderColor: '#a94d34' }}
+              className="button danger"
               onClick={() => handleDelete(deletingProduct)}
               disabled={busy}
             >

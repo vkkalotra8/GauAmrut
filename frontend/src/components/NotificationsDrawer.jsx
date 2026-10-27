@@ -113,7 +113,7 @@ export default function NotificationsDrawer() {
           <div className="notifications-header">
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <b>Notifications</b>
-              {unreadCount > 0 && <span className="pill" style={{ background: '#ecfdf5', color: '#065f46' }}>{unreadCount} new</span>}
+              {unreadCount > 0 && <span className="pill success">{unreadCount} new</span>}
             </div>
             {unreadCount > 0 && (
               <button

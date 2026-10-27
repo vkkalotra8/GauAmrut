@@ -287,9 +287,7 @@ export default function Payments() {
         >
           {t('payments.claimsTab', 'Customer payment claims')}
           {pendingClaimsCount > 0 && (
-            <span style={{ marginLeft: '6px', background: '#d97706', color: '#fff', borderRadius: '10px', padding: '1px 6px', fontSize: '10px' }}>
-              {pendingClaimsCount}
-            </span>
+            <span className="count-badge">{pendingClaimsCount}</span>
           )}
         </button>
         <button
@@ -413,10 +411,10 @@ export default function Payments() {
                         <td><code>{c.reference}</code></td>
                         <td>{c.notes || '—'}</td>
                         <td>
-                          <span className={`status ${c.status === 'approved' ? '' : c.status === 'rejected' ? 'neutral' : ''}`} style={c.status === 'pending' ? { background: '#fef3c7', color: '#92400e' } : {}}>
+                          <span className={`status ${c.status === 'approved' ? 'success' : c.status === 'rejected' ? 'danger' : 'pending'}`}>
                             {c.status}
                           </span>
-                          {c.rejectionReason && <small style={{ display: 'block', color: '#b91c1c' }}>{c.rejectionReason}</small>}
+                          {c.rejectionReason && <small className="danger-text" style={{ display: 'block' }}>{c.rejectionReason}</small>}
                         </td>
                         <td>
                           {c.status === 'pending' && (
@@ -431,8 +429,7 @@ export default function Payments() {
                               </button>
                               <button
                                 type="button"
-                                className="button small"
-                                style={{ color: '#b91c1c', borderColor: '#fca5a5' }}
+                                className="button small danger-ghost"
                                 disabled={busy}
                                 onClick={() => setRejectingClaim(c)}
                               >
@@ -485,11 +482,11 @@ export default function Payments() {
                         <td>
                           {p.reversed ? (
                             <div>
-                              <span className="status neutral" style={{ background: '#fef2f2', color: '#991b1b', borderColor: '#fecaca' }}>
+                              <span className="status danger">
                                 {t('payments.reversedBadge', 'Reversed')}
                               </span>
                               {p.reversalReason && (
-                                <small style={{ display: 'block', color: '#991b1b', fontSize: '11px', marginTop: '2px', maxWidth: '180px' }}>
+                                <small className="danger-text" style={{ display: 'block', fontSize: '11px', marginTop: '2px', maxWidth: '180px' }}>
                                   {p.reversalReason}
                                 </small>
                               )}
@@ -506,8 +503,7 @@ export default function Payments() {
                             {!p.reversed && (
                               <button
                                 type="button"
-                                className="button small"
-                                style={{ color: '#b91c1c', borderColor: '#fca5a5' }}
+                                className="button small danger-ghost"
                                 onClick={() => { setReversingPayment(p); setError(''); }}
                               >
                                 <RotateCcw size={14} /> {t('payments.reversePayment', 'Reverse')}
@@ -558,24 +554,24 @@ export default function Payments() {
                   </thead>
                   <tbody>
                     {adjustments.data.map(adj => {
-                      const typeStyles = {
-                        credit: { bg: '#ecfdf5', text: '#065f46', border: '#a7f3d0' },
-                        waiver: { bg: '#f0fdfa', text: '#0f766e', border: '#99f6e4' },
-                        debit: { bg: '#fffbeb', text: '#92400e', border: '#fde68a' },
-                        refund: { bg: '#eff6ff', text: '#1d4ed8', border: '#bfdbfe' }
-                      }[adj.type] || { bg: '#f3f4f6', text: '#374151', border: '#e5e7eb' };
+                      const typeClass = {
+                        credit: 'success',
+                        waiver: 'info',
+                        debit: 'pending',
+                        refund: 'info'
+                      }[adj.type] || 'neutral';
 
                       return (
                         <tr key={adj._id}>
                           <td>{new Date(adj.createdAt).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' })}</td>
                           <td><b>{adj.customerName || customers.data?.find(c => c._id === adj.customer_id)?.name || 'Customer'}</b></td>
                           <td>
-                            <span className="pill" style={{ background: typeStyles.bg, color: typeStyles.text, borderColor: typeStyles.border, textTransform: 'capitalize', fontWeight: '600', fontSize: '11px' }}>
+                            <span className={`pill ${typeClass}`} style={{ textTransform: 'capitalize', fontWeight: '600', fontSize: '11px' }}>
                               {adj.type}
                             </span>
                           </td>
                           <td>
-                            <b style={{ color: adj.type === 'debit' || adj.type === 'refund' ? '#b91c1c' : 'var(--primary)' }}>
+                            <b style={{ color: adj.type === 'debit' || adj.type === 'refund' ? 'var(--danger)' : 'var(--green)' }}>
                               {adj.type === 'debit' || adj.type === 'refund' ? '+' : '-'}{money(adj.amountPaise)}
                             </b>
                           </td>
@@ -587,11 +583,11 @@ export default function Payments() {
                           <td>
                             {adj.status === 'reversed' ? (
                               <div>
-                                <span className="status neutral" style={{ background: '#fef2f2', color: '#991b1b', borderColor: '#fecaca' }}>
+                                <span className="status danger">
                                   {t('payments.reversedBadge', 'Reversed')}
                                 </span>
                                 {adj.reversalReason && (
-                                  <small style={{ display: 'block', color: '#991b1b', fontSize: '11px', marginTop: '2px', maxWidth: '160px' }}>
+                                  <small className="danger-text" style={{ display: 'block', fontSize: '11px', marginTop: '2px', maxWidth: '160px' }}>
                                     {adj.reversalReason}
                                   </small>
                                 )}
@@ -604,8 +600,7 @@ export default function Payments() {
                             {adj.status !== 'reversed' && (
                               <button
                                 type="button"
-                                className="button small"
-                                style={{ color: '#b91c1c', borderColor: '#fca5a5' }}
+                                className="button small danger-ghost"
                                 onClick={() => { setReversingAdjustment(adj); setError(''); }}
                               >
                                 <RotateCcw size={14} /> {t('payments.reverseAdjustment', 'Reverse')}
@@ -641,7 +636,7 @@ export default function Payments() {
               <button type="button" className="button" onClick={() => setRejectingClaim(null)}>
                 {t('common.cancel', 'Cancel')}
               </button>
-              <button type="submit" className="button primary" style={{ background: '#b91c1c', borderColor: '#b91c1c' }} disabled={busy}>
+              <button type="submit" className="button danger" disabled={busy}>
                 {busy ? t('common.saving', 'Saving…') : t('payments.confirmReject', 'Confirm rejection')}
               </button>
             </div>
@@ -657,10 +652,10 @@ export default function Payments() {
             const reason = new FormData(e.currentTarget).get('reason');
             handleReversePayment(reversingPayment._id, reason);
           }}>
-            <div style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#991b1b', padding: '12px', borderRadius: '8px', marginBottom: '14px', fontSize: '13px' }}>
+            <div className="danger-note" style={{ marginBottom: '14px', fontSize: '13px' }}>
               <b>⚠️ {t('payments.reversePaymentWarning', "Reversing this payment will restore the customer's outstanding balance on their monthly bill.")}</b>
             </div>
-            <div style={{ background: '#f8fafc', padding: '10px 14px', borderRadius: '6px', marginBottom: '14px', fontSize: '13px', display: 'flex', justifyContent: 'space-between' }}>
+            <div className="note-strip" style={{ marginBottom: '14px', fontSize: '13px', display: 'flex', justifyContent: 'space-between' }}>
               <span>{t('payments.receiptLabel', 'Receipt #')}: <code>{reversingPayment.receipt}</code></span>
               <span>{t('common.amount', 'Amount')}: <b>{money(reversingPayment.amountPaise)}</b></span>
             </div>
@@ -670,7 +665,7 @@ export default function Payments() {
               <button type="button" className="button" onClick={() => setReversingPayment(null)}>
                 {t('common.cancel', 'Cancel')}
               </button>
-              <button type="submit" className="button primary" style={{ background: '#b91c1c', borderColor: '#b91c1c' }} disabled={busy}>
+              <button type="submit" className="button danger" disabled={busy}>
                 {busy ? t('common.saving', 'Saving…') : t('payments.confirmReversePayment', 'Confirm payment reversal')}
               </button>
             </div>
@@ -686,10 +681,10 @@ export default function Payments() {
             const reason = new FormData(e.currentTarget).get('reason');
             handleReverseAdjustment(reversingAdjustment._id, reason);
           }}>
-            <div style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#991b1b', padding: '12px', borderRadius: '8px', marginBottom: '14px', fontSize: '13px' }}>
+            <div className="danger-note" style={{ marginBottom: '14px', fontSize: '13px' }}>
               <b>⚠️ {t('payments.reverseAdjustmentWarning', "Reversing this adjustment will restore the previous balance on the customer's bill.")}</b>
             </div>
-            <div style={{ background: '#f8fafc', padding: '10px 14px', borderRadius: '6px', marginBottom: '14px', fontSize: '13px', display: 'flex', justifyContent: 'space-between' }}>
+            <div className="note-strip" style={{ marginBottom: '14px', fontSize: '13px', display: 'flex', justifyContent: 'space-between' }}>
               <span className="capitalize"><b>{reversingAdjustment.type}</b></span>
               <span><b>{money(reversingAdjustment.amountPaise)}</b></span>
             </div>
@@ -699,7 +694,7 @@ export default function Payments() {
               <button type="button" className="button" onClick={() => setReversingAdjustment(null)}>
                 {t('common.cancel', 'Cancel')}
               </button>
-              <button type="submit" className="button primary" style={{ background: '#b91c1c', borderColor: '#b91c1c' }} disabled={busy}>
+              <button type="submit" className="button danger" disabled={busy}>
                 {busy ? t('common.saving', 'Saving…') : t('payments.confirmReverseAdjustment', 'Confirm adjustment reversal')}
               </button>
             </div>
@@ -799,21 +794,21 @@ export default function Payments() {
       {/* Digital Receipt Modal */}
       {activeReceipt && (
         <Modal title={t('payments.receiptTitle', 'Payment Receipt')} close={() => setActiveReceipt(null)}>
-          <div className="receipt-card" style={{ padding: '20px', border: '1px solid var(--border)', borderRadius: '12px', background: '#fdfdfd' }}>
+          <div className="receipt-card">
             {activeReceipt.reversed && (
-              <div style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#991b1b', padding: '10px 14px', borderRadius: '8px', marginBottom: '14px', fontSize: '13px' }}>
+              <div className="danger-note" style={{ padding: '10px 14px', marginBottom: '14px', fontSize: '13px' }}>
                 <b>⚠️ {t('payments.reversedBadge', 'REVERSED')}</b> — {activeReceipt.reversalReason || 'This payment receipt was reversed by the dairy.'}
                 {activeReceipt.reversedAt && <small style={{ display: 'block', marginTop: '2px', opacity: 0.9 }}>{new Date(activeReceipt.reversedAt).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}</small>}
               </div>
             )}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '1px dashed var(--border)', paddingBottom: '14px', marginBottom: '14px' }}>
               <div>
-                <b style={{ fontSize: '18px', color: 'var(--primary)' }}>{activeReceipt.dairy?.businessName}</b>
+                <b style={{ fontSize: '18px', color: 'var(--green)' }}>{activeReceipt.dairy?.businessName}</b>
                 <div style={{ fontSize: '12px', color: 'var(--muted)' }}>{activeReceipt.dairy?.ownerName} · {activeReceipt.dairy?.phone}</div>
                 {activeReceipt.dairy?.upiId && <div style={{ fontSize: '12px', color: 'var(--muted)' }}>UPI: {activeReceipt.dairy.upiId}</div>}
               </div>
               <div style={{ textAlign: 'right' }}>
-                <span className="pill" style={{ background: activeReceipt.reversed ? '#fef2f2' : '#ecfdf5', color: activeReceipt.reversed ? '#991b1b' : '#065f46', borderColor: activeReceipt.reversed ? '#fecaca' : '#a7f3d0' }}>
+                <span className={`pill ${activeReceipt.reversed ? 'danger' : 'success'}`}>
                   {activeReceipt.reversed ? `✕ ${t('payments.reversedBadge', 'REVERSED')}` : `✓ ${t('payments.verifiedReceipt', 'VERIFIED RECEIPT')}`}
                 </span>
                 <div style={{ fontSize: '11px', color: 'var(--muted)', marginTop: '4px' }}><code>{activeReceipt.receipt}</code></div>
@@ -832,7 +827,7 @@ export default function Payments() {
               </div>
             </div>
 
-            <div style={{ background: '#f8fafc', padding: '12px 16px', borderRadius: '8px', marginBottom: '16px' }}>
+            <div className="note-strip" style={{ marginBottom: '16px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
                 <span>{t('payments.method', 'Payment Method')}:</span>
                 <b className="capitalize">{activeReceipt.method}</b>
@@ -851,7 +846,7 @@ export default function Payments() {
               )}
               <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid var(--border)', paddingTop: '8px', marginTop: '6px' }}>
                 <span style={{ fontSize: '15px', fontWeight: '600' }}>{t('common.amount', 'Amount Paid')}:</span>
-                <span style={{ fontSize: '18px', fontWeight: '700', color: 'var(--primary)' }}>{money(activeReceipt.amountPaise)}</span>
+                <span style={{ fontSize: '18px', fontWeight: '700', color: 'var(--green)' }}>{money(activeReceipt.amountPaise)}</span>
               </div>
               {activeReceipt.balanceAfterPaise !== null && (
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '6px', fontSize: '12px', color: 'var(--muted)' }}>

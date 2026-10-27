@@ -189,12 +189,8 @@ export function CustomerHistory() {
                       <tr key={adj._id}>
                         <td>
                           <span
-                            className="pill"
-                            style={{
-                              background: adj.type === 'vacation' ? '#fef3c7' : '#ecfdf5',
-                              color: adj.type === 'vacation' ? '#92400e' : '#065f46',
-                              fontWeight: '600'
-                            }}
+                            className={`pill ${adj.type === 'vacation' ? 'pending' : 'success'}`}
+                            style={{ fontWeight: '600' }}
                           >
                             {adj.type === 'vacation' ? 'Vacation pause' : 'Extra milk'}
                           </span>
@@ -205,8 +201,7 @@ export function CustomerHistory() {
                         <td>{adj.reason || '—'}</td>
                         <td>
                           <span
-                            className={`status ${adj.status === 'approved' ? '' : adj.status === 'rejected' || adj.status === 'cancelled' ? 'neutral' : ''}`}
-                            style={adj.status === 'pending' ? { background: '#fef3c7', color: '#92400e' } : {}}
+                            className={`status ${adj.status === 'approved' ? 'success' : adj.status === 'pending' ? 'pending' : 'neutral'}`}
                           >
                             {adj.status}
                           </span>
@@ -215,8 +210,7 @@ export function CustomerHistory() {
                           {adj.status === 'pending' && (
                             <button
                               type="button"
-                              className="text-button"
-                              style={{ color: '#a94d34' }}
+                              className="text-button danger-text"
                               onClick={() => cancelAdjustment(adj._id)}
                             >
                               Cancel
@@ -428,7 +422,7 @@ export function CustomerPayments() {
         <div className="card-heading">
           <h2>{t('customerPortal.monthlyBillsHeading', 'Monthly bills')}</h2>
           {totalOutstanding > 0 && (
-            <span className="pill" style={{ background: '#fef3c7', color: '#92400e', borderColor: '#fde68a' }}>
+            <span className="pill pending">
               {t('customerPortal.totalDue', 'Total due')}: {money(totalOutstanding)}
             </span>
           )}
@@ -521,11 +515,11 @@ export function CustomerPayments() {
                       <td><code>{c.reference}</code></td>
                       <td>{c.notes || '—'}</td>
                       <td>
-                        <span className={`status ${c.status === 'approved' ? '' : c.status === 'rejected' ? 'neutral' : ''}`} style={c.status === 'pending' ? { background: '#fef3c7', color: '#92400e' } : {}}>
+                        <span className={`status ${c.status === 'approved' ? 'success' : c.status === 'rejected' ? 'danger' : 'pending'}`}>
                           {c.status}
                         </span>
                         {c.rejectionReason && (
-                          <small style={{ display: 'block', color: '#b91c1c', marginTop: '2px' }}>
+                          <small className="danger-text" style={{ display: 'block', marginTop: '2px' }}>
                             {c.rejectionReason}
                           </small>
                         )}
@@ -563,23 +557,23 @@ export function CustomerPayments() {
                 </thead>
                 <tbody>
                   {adjustments.data.map(adj => {
-                    const typeStyles = {
-                      credit: { bg: '#ecfdf5', text: '#065f46', border: '#a7f3d0' },
-                      waiver: { bg: '#f0fdfa', text: '#0f766e', border: '#99f6e4' },
-                      debit: { bg: '#fffbeb', text: '#92400e', border: '#fde68a' },
-                      refund: { bg: '#eff6ff', text: '#1d4ed8', border: '#bfdbfe' }
-                    }[adj.type] || { bg: '#f3f4f6', text: '#374151', border: '#e5e7eb' };
+                    const typeClass = {
+                      credit: 'success',
+                      waiver: 'info',
+                      debit: 'pending',
+                      refund: 'info'
+                    }[adj.type] || 'neutral';
 
                     return (
                       <tr key={adj._id}>
                         <td>{new Date(adj.createdAt).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' })}</td>
                         <td>
-                          <span className="pill" style={{ background: typeStyles.bg, color: typeStyles.text, borderColor: typeStyles.border, textTransform: 'capitalize', fontWeight: '600', fontSize: '11px' }}>
+                          <span className={`pill ${typeClass}`} style={{ textTransform: 'capitalize', fontWeight: '600', fontSize: '11px' }}>
                             {adj.type}
                           </span>
                         </td>
                         <td>
-                          <b style={{ color: adj.type === 'debit' || adj.type === 'refund' ? '#b91c1c' : 'var(--primary)' }}>
+                          <b style={{ color: adj.type === 'debit' || adj.type === 'refund' ? 'var(--danger)' : 'var(--green)' }}>
                             {adj.type === 'debit' || adj.type === 'refund' ? '+' : '-'}{money(adj.amountPaise)}
                           </b>
                         </td>
@@ -587,7 +581,7 @@ export function CustomerPayments() {
                         <td>{adj.billMonth ? <code>{adj.billMonth}</code> : <span style={{ color: 'var(--muted)' }}>Account</span>}</td>
                         <td>
                           {adj.status === 'reversed' ? (
-                            <span className="status neutral" style={{ background: '#fef2f2', color: '#991b1b', borderColor: '#fecaca' }}>
+                            <span className="status danger">
                               {t('payments.reversedBadge', 'Reversed')}
                             </span>
                           ) : (
@@ -635,11 +629,11 @@ export function CustomerPayments() {
                       <td>
                         {p.reversed ? (
                           <div>
-                            <span className="status neutral" style={{ background: '#fef2f2', color: '#991b1b', borderColor: '#fecaca' }}>
+                            <span className="status danger">
                               {t('payments.reversedBadge', 'Reversed')}
                             </span>
                             {p.reversalReason && (
-                              <small style={{ display: 'block', color: '#991b1b', fontSize: '11px', marginTop: '2px' }}>
+                              <small className="danger-text" style={{ display: 'block', fontSize: '11px', marginTop: '2px' }}>
                                 {p.reversalReason}
                               </small>
                             )}
@@ -669,7 +663,7 @@ export function CustomerPayments() {
       {claimModalOpen && (
         <Modal title={t('customerPortal.claimModalTitle', 'Submit a payment claim')} close={() => setClaimModalOpen(false)}>
           <form onSubmit={submitClaim}>
-            <div style={{ background: '#f8fafc', padding: '12px 14px', borderRadius: '8px', marginBottom: '14px', border: '1px solid var(--border)' }}>
+            <div className="note-strip" style={{ marginBottom: '14px' }}>
               <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '4px' }}>
                 {t('customerPortal.payToDairy', 'Pay directly to your dairy owner via UPI:')}
               </div>
@@ -724,15 +718,15 @@ export function CustomerPayments() {
       {/* Customer Receipt Modal */}
       {activeReceipt && (
         <Modal title={t('payments.receiptTitle', 'Payment Receipt')} close={() => setActiveReceipt(null)}>
-          <div className="receipt-card" style={{ padding: '20px', border: '1px solid var(--border)', borderRadius: '12px', background: '#fdfdfd' }}>
+          <div className="receipt-card">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '1px dashed var(--border)', paddingBottom: '14px', marginBottom: '14px' }}>
               <div>
-                <b style={{ fontSize: '18px', color: 'var(--primary)' }}>{activeReceipt.dairy?.businessName}</b>
+                <b style={{ fontSize: '18px', color: 'var(--green)' }}>{activeReceipt.dairy?.businessName}</b>
                 <div style={{ fontSize: '12px', color: 'var(--muted)' }}>{activeReceipt.dairy?.ownerName} · {activeReceipt.dairy?.phone}</div>
                 {activeReceipt.dairy?.upiId && <div style={{ fontSize: '12px', color: 'var(--muted)' }}>UPI: {activeReceipt.dairy.upiId}</div>}
               </div>
               <div style={{ textAlign: 'right' }}>
-                <span className="pill" style={{ background: '#ecfdf5', color: '#065f46', borderColor: '#a7f3d0' }}>
+                <span className="pill success">
                   ✓ {t('payments.verifiedReceipt', 'VERIFIED RECEIPT')}
                 </span>
                 <div style={{ fontSize: '11px', color: 'var(--muted)', marginTop: '4px' }}><code>{activeReceipt.receipt}</code></div>
@@ -750,7 +744,7 @@ export function CustomerPayments() {
               </div>
             </div>
 
-            <div style={{ background: '#f8fafc', padding: '12px 16px', borderRadius: '8px', marginBottom: '16px' }}>
+            <div className="note-strip" style={{ marginBottom: '16px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
                 <span>{t('payments.method', 'Payment Method')}:</span>
                 <b className="capitalize">{activeReceipt.method}</b>
@@ -1072,7 +1066,7 @@ export function CustomerOrders() {
                     border: '1px solid var(--border)',
                     borderRadius: '10px',
                     padding: '16px 18px',
-                    background: '#fff'
+                    background: 'var(--surface)'
                   }}
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', marginBottom: '10px' }}>
@@ -1083,19 +1077,8 @@ export function CustomerOrders() {
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                       <span
-                        className="status"
-                        style={{
-                          background:
-                            ord.status === 'fulfilled' ? '#e9f5e8' :
-                            ord.status === 'confirmed' ? '#e8edf8' :
-                            ord.status === 'cancelled' ? '#faeaea' : '#fcf5e7',
-                          color:
-                            ord.status === 'fulfilled' ? '#2e7424' :
-                            ord.status === 'confirmed' ? '#28559a' :
-                            ord.status === 'cancelled' ? '#9a2828' : '#8c6b16',
-                          borderColor: 'currentColor',
-                          fontWeight: '600'
-                        }}
+                        className={`status ${ord.status === 'fulfilled' ? 'success' : ord.status === 'confirmed' ? 'info' : ord.status === 'cancelled' ? 'danger' : 'pending'}`}
+                        style={{ fontWeight: '600' }}
                       >
                         {ord.status === 'fulfilled' && <CheckCircle2 size={12} />}
                         {ord.status === 'confirmed' && <Check size={12} />}
@@ -1107,8 +1090,7 @@ export function CustomerOrders() {
                       {ord.status === 'placed' && (
                         <button
                           type="button"
-                          className="button small"
-                          style={{ color: '#a94d34', borderColor: '#f4d9cf' }}
+                          className="button small danger-ghost"
                           onClick={() => setCancellingOrder(ord)}
                           disabled={busy}
                         >
@@ -1145,7 +1127,7 @@ export function CustomerOrders() {
                     <div>
                       {ord.notes && <small style={{ color: 'var(--muted)' }}>Note: {ord.notes}</small>}
                       {ord.status === 'cancelled' && ord.cancellationReason && (
-                        <small style={{ color: '#a94d34', display: 'block' }}>Cancellation: {ord.cancellationReason}</small>
+                        <small className="danger-text" style={{ display: 'block' }}>Cancellation: {ord.cancellationReason}</small>
                       )}
                     </div>
                     <div>
@@ -1199,18 +1181,9 @@ export function CustomerOrders() {
               {selectedItems.map((item, idx) => (
                 <div
                   key={idx}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '10px',
-                    marginBottom: '8px',
-                    padding: '8px 10px',
-                    background: '#f9faf7',
-                    borderRadius: '6px'
-                  }}
+                  className="order-item-row"
                 >
                   <select
-                    style={{ flex: 1, padding: '8px', border: '1px solid var(--border)', borderRadius: '4px' }}
                     value={item.product_id}
                     onChange={e => updateItem(idx, 'product_id', e.target.value)}
                     required
@@ -1226,7 +1199,6 @@ export function CustomerOrders() {
                     type="number"
                     min="1"
                     max="100"
-                    style={{ width: '65px', padding: '8px', border: '1px solid var(--border)', borderRadius: '4px' }}
                     value={item.quantity}
                     onChange={e => updateItem(idx, 'quantity', e.target.value)}
                     required
@@ -1236,7 +1208,7 @@ export function CustomerOrders() {
                     <button
                       type="button"
                       className="icon-button"
-                      style={{ color: '#a94d34', minWidth: '32px', minHeight: '32px' }}
+                      style={{ color: 'var(--danger)', minWidth: '32px', minHeight: '32px' }}
                       onClick={() => removeItemRow(idx)}
                     >
                       <X size={15} />
@@ -1246,7 +1218,7 @@ export function CustomerOrders() {
               ))}
             </div>
 
-            <div style={{ padding: '10px 14px', background: '#eaf3e8', borderRadius: '6px', display: 'flex', justifyContent: 'space-between', marginBottom: '16px' }}>
+            <div className="total-strip" style={{ marginBottom: '16px' }}>
               <span>Order Total (Frozen at placement):</span>
               <b style={{ color: 'var(--green)', fontSize: '15px' }}>{money(liveTotalPaise)}</b>
             </div>
@@ -1292,8 +1264,7 @@ export function CustomerOrders() {
               </button>
               <button
                 type="submit"
-                className="button"
-                style={{ background: '#a94d34', color: '#fff', borderColor: '#a94d34' }}
+                className="button danger"
                 disabled={busy}
               >
                 {busy ? t('common.saving', 'Cancelling…') : 'Cancel Order'}
@@ -1450,7 +1421,7 @@ export function CustomerDisputes() {
                     border: '1px solid var(--border)',
                     borderRadius: '10px',
                     padding: '16px 18px',
-                    background: '#fff',
+                    background: 'var(--surface)',
                     display: 'flex',
                     justifyContent: 'space-between',
                     alignItems: 'center',
@@ -1462,19 +1433,8 @@ export function CustomerDisputes() {
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
                       <span className="pill capitalize">{typeLabels[d.type] || d.type}</span>
                       <span
-                        className="status"
-                        style={{
-                          background:
-                            d.status === 'resolved' ? '#e9f5e8' :
-                            d.status === 'under_review' ? '#e8edf8' :
-                            d.status === 'cancelled' ? '#f3f3f3' : '#fcf5e7',
-                          color:
-                            d.status === 'resolved' ? '#2e7424' :
-                            d.status === 'under_review' ? '#28559a' :
-                            d.status === 'cancelled' ? '#666' : '#926a19',
-                          borderColor: 'currentColor',
-                          fontWeight: '600'
-                        }}
+                        className={`status ${d.status === 'resolved' ? 'success' : d.status === 'under_review' ? 'info' : d.status === 'cancelled' ? 'neutral' : 'pending'}`}
+                        style={{ fontWeight: '600' }}
                       >
                         {d.status === 'resolved' && <CheckCircle2 size={12} />}
                         {d.status === 'under_review' && <Clock size={12} />}
@@ -1553,9 +1513,6 @@ export function CustomerDisputes() {
                 rows={4}
                 placeholder="Please describe the date, shift, or issue clearly so your dairy can resolve it quickly..."
                 style={{
-                  border: '1px solid #dfe5d8',
-                  borderRadius: '6px',
-                  padding: '10px 12px',
                   width: '100%',
                   fontFamily: 'inherit',
                   fontSize: '13px'
@@ -1575,23 +1532,12 @@ export function CustomerDisputes() {
       {/* Thread Modal */}
       {activeDispute && (
         <Modal title={`Dispute: ${activeDispute.title}`} close={() => setActiveDispute(null)}>
-          <div style={{ marginBottom: '14px', padding: '10px 14px', background: '#f9faf7', borderRadius: '8px' }}>
+          <div className="note-strip" style={{ marginBottom: '14px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
               <span className="pill capitalize">{typeLabels[activeDispute.type] || activeDispute.type}</span>
               <span
-                className="status"
-                style={{
-                  background:
-                    activeDispute.status === 'resolved' ? '#e9f5e8' :
-                    activeDispute.status === 'under_review' ? '#e8edf8' :
-                    activeDispute.status === 'cancelled' ? '#f3f3f3' : '#fcf5e7',
-                  color:
-                    activeDispute.status === 'resolved' ? '#2e7424' :
-                    activeDispute.status === 'under_review' ? '#28559a' :
-                    activeDispute.status === 'cancelled' ? '#666' : '#926a19',
-                  borderColor: 'currentColor',
-                  fontWeight: '600'
-                }}
+                className={`status ${activeDispute.status === 'resolved' ? 'success' : activeDispute.status === 'under_review' ? 'info' : activeDispute.status === 'cancelled' ? 'neutral' : 'pending'}`}
+                style={{ fontWeight: '600' }}
               >
                 {activeDispute.status?.replace('_', ' ') || ''}
               </span>
@@ -1615,13 +1561,10 @@ export function CustomerDisputes() {
               return (
                 <div
                   key={i}
+                  className={`chat-bubble ${isMe ? 'me' : 'other'}`}
                   style={{
                     alignSelf: isMe ? 'flex-end' : 'flex-start',
-                    maxWidth: '82%',
-                    background: isMe ? '#e8f3ea' : '#f0f3f6',
-                    border: `1px solid ${isMe ? '#d2e7d6' : '#dde3eb'}`,
-                    borderRadius: '10px',
-                    padding: '10px 14px'
+                    maxWidth: '82%'
                   }}
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', marginBottom: '4px', fontSize: '10px', color: 'var(--muted)' }}>
@@ -1637,11 +1580,11 @@ export function CustomerDisputes() {
           </div>
 
           {activeDispute.status === 'resolved' && (
-            <div style={{ padding: '12px 14px', background: '#e9f5e8', border: '1px solid #cce5cb', borderRadius: '8px', marginBottom: '14px' }}>
-              <b style={{ color: '#2e7424', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px' }}>
+            <div className="resolved-banner" style={{ marginBottom: '14px' }}>
+              <b className="resolved-title">
                 <CheckCircle2 size={16} /> Resolved by Dairy
               </b>
-              <p style={{ fontSize: '12px', margin: '6px 0 0', color: '#2b5025' }}>
+              <p>
                 {activeDispute.resolutionNotes}
               </p>
             </div>
@@ -1656,11 +1599,13 @@ export function CustomerDisputes() {
                   rows={2}
                   style={{
                     flex: 1,
-                    border: '1px solid #dfe5d8',
+                    border: '1px solid var(--border)',
                     borderRadius: '6px',
                     padding: '8px 12px',
                     fontFamily: 'inherit',
-                    fontSize: '13px'
+                    fontSize: '13px',
+                    background: 'var(--surface)',
+                    color: 'var(--ink)'
                   }}
                   placeholder="Type a message to your dairy..."
                   value={replyMessage}
@@ -1681,8 +1626,7 @@ export function CustomerDisputes() {
               <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
                 <button
                   type="button"
-                  className="button small"
-                  style={{ color: '#a94d34', borderColor: '#f4d9cf' }}
+                  className="button small danger-ghost"
                   onClick={handleCancelDispute}
                   disabled={busy}
                 >

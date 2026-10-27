@@ -177,7 +177,7 @@ export default function Disputes() {
                     border: '1px solid var(--border)',
                     borderRadius: '10px',
                     padding: '18px 20px',
-                    background: '#fff',
+                    background: 'var(--surface)',
                     display: 'flex',
                     justifyContent: 'space-between',
                     alignItems: 'center',
@@ -190,19 +190,8 @@ export default function Disputes() {
                       <span className="pill capitalize">{typeLabels[d.type] || d.type}</span>
                       <span className="pill" style={{ textTransform: 'uppercase' }}>Target: {d.targetType}</span>
                       <span
-                        className="status"
-                        style={{
-                          background:
-                            d.status === 'resolved' ? '#e9f5e8' :
-                            d.status === 'under_review' ? '#e8edf8' :
-                            d.status === 'cancelled' ? '#f3f3f3' : '#fcf5e7',
-                          color:
-                            d.status === 'resolved' ? '#2e7424' :
-                            d.status === 'under_review' ? '#28559a' :
-                            d.status === 'cancelled' ? '#666' : '#926a19',
-                          borderColor: 'currentColor',
-                          fontWeight: '600'
-                        }}
+                        className={`status ${d.status === 'resolved' ? 'success' : d.status === 'under_review' ? 'info' : d.status === 'cancelled' ? 'neutral' : 'pending'}`}
+                        style={{ fontWeight: '600' }}
                       >
                         {d.status === 'resolved' && <CheckCircle2 size={12} />}
                         {d.status === 'under_review' && <Clock size={12} />}
@@ -252,23 +241,12 @@ export default function Disputes() {
           title={`Dispute: ${activeDispute.title}`}
           close={() => setActiveDispute(null)}
         >
-          <div style={{ marginBottom: '14px', padding: '10px 14px', background: '#f9faf7', borderRadius: '8px' }}>
+          <div className="note-strip" style={{ marginBottom: '14px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
               <span className="pill capitalize">{typeLabels[activeDispute.type] || activeDispute.type}</span>
               <span
-                className="status"
-                style={{
-                  background:
-                    activeDispute.status === 'resolved' ? '#e9f5e8' :
-                    activeDispute.status === 'under_review' ? '#e8edf8' :
-                    activeDispute.status === 'cancelled' ? '#f3f3f3' : '#fcf5e7',
-                  color:
-                    activeDispute.status === 'resolved' ? '#2e7424' :
-                    activeDispute.status === 'under_review' ? '#28559a' :
-                    activeDispute.status === 'cancelled' ? '#666' : '#926a19',
-                  borderColor: 'currentColor',
-                  fontWeight: '600'
-                }}
+                className={`status ${activeDispute.status === 'resolved' ? 'success' : activeDispute.status === 'under_review' ? 'info' : activeDispute.status === 'cancelled' ? 'neutral' : 'pending'}`}
+                style={{ fontWeight: '600' }}
               >
                 {activeDispute.status?.replace('_', ' ') || ''}
               </span>
@@ -295,13 +273,10 @@ export default function Disputes() {
               return (
                 <div
                   key={i}
+                  className={`chat-bubble ${isOwner ? 'me' : 'other'}`}
                   style={{
                     alignSelf: isOwner ? 'flex-end' : 'flex-start',
-                    maxWidth: '82%',
-                    background: isOwner ? '#e8f3ea' : '#f0f3f6',
-                    border: `1px solid ${isOwner ? '#d2e7d6' : '#dde3eb'}`,
-                    borderRadius: '10px',
-                    padding: '10px 14px'
+                    maxWidth: '82%'
                   }}
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', marginBottom: '4px', fontSize: '10px', color: 'var(--muted)' }}>
@@ -318,11 +293,11 @@ export default function Disputes() {
 
           {/* Resolution banner if resolved */}
           {activeDispute.status === 'resolved' && (
-            <div style={{ padding: '12px 14px', background: '#e9f5e8', border: '1px solid #cce5cb', borderRadius: '8px', marginBottom: '14px' }}>
-              <b style={{ color: '#2e7424', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px' }}>
+            <div className="resolved-banner" style={{ marginBottom: '14px' }}>
+              <b className="resolved-title">
                 <CheckCircle2 size={16} /> Resolved by Dairy
               </b>
-              <p style={{ fontSize: '12px', margin: '6px 0 0', color: '#2b5025' }}>
+              <p>
                 {activeDispute.resolutionNotes}
               </p>
             </div>
@@ -338,11 +313,13 @@ export default function Disputes() {
                   rows={2}
                   style={{
                     flex: 1,
-                    border: '1px solid #dfe5d8',
+                    border: '1px solid var(--border)',
                     borderRadius: '6px',
                     padding: '8px 12px',
                     fontFamily: 'inherit',
-                    fontSize: '13px'
+                    fontSize: '13px',
+                    background: 'var(--surface)',
+                    color: 'var(--ink)'
                   }}
                   placeholder={t('disputes.replyPlaceholder', 'Type a reply to the customer…')}
                   value={replyMessage}
@@ -363,8 +340,7 @@ export default function Disputes() {
               <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
                 <button
                   type="button"
-                  className="button"
-                  style={{ color: '#2e7424', borderColor: '#cce5cb' }}
+                  className="button success-ghost"
                   onClick={() => setResolvingModal(true)}
                   disabled={busy}
                 >
@@ -400,9 +376,6 @@ export default function Disputes() {
                 rows={3}
                 placeholder="e.g., Verified delivery route records, issued ₹60 credit adjustment for missing 1L milk."
                 style={{
-                  border: '1px solid #dfe5d8',
-                  borderRadius: '6px',
-                  padding: '10px 12px',
                   width: '100%',
                   fontFamily: 'inherit',
                   fontSize: '13px'
