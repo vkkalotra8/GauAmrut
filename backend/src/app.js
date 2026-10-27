@@ -781,7 +781,7 @@ function createApp(redis) {
           type: 'dispute_reply',
           title: 'New Dispute Raised',
           message: `${customer.name} raised dispute: "${req.body.title}".`,
-          link: '/disputes',
+          link: `/disputes?thread=${result._id}`,
           relatedId: result._id
         });
       }
@@ -880,7 +880,7 @@ function createApp(redis) {
           type: 'dispute_reply',
           title: 'Reply on Dispute',
           message: `Customer replied on "${result.title}".`,
-          link: '/disputes',
+          link: `/disputes?thread=${result._id}`,
           relatedId: result._id
         });
       }
@@ -894,7 +894,7 @@ function createApp(redis) {
           type: 'dispute_reply',
           title: 'Dairy Replied to Dispute',
           message: `Dairy replied to your dispute "${result.title}".`,
-          link: '/disputes',
+          link: `/disputes?thread=${result._id}`,
           relatedId: result._id
         });
       }
@@ -945,7 +945,7 @@ function createApp(redis) {
           type: 'dispute_reply',
           title: `Dispute ${newStatus.toUpperCase()}`,
           message: `Your dispute "${result.title}" has been marked ${newStatus}.${resolutionNotes ? ` Note: ${resolutionNotes}` : ''}`,
-          link: '/disputes',
+          link: `/disputes?thread=${result._id}`,
           relatedId: result._id
         });
       }

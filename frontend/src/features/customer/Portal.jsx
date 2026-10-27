@@ -1340,6 +1340,7 @@ export function CustomerDisputes() {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
 
   async function openThread(d) {
     setError('');
@@ -1354,6 +1355,24 @@ export function CustomerDisputes() {
       setActiveDispute(d);
     }
   }
+
+  // Deep link from a notification: ?thread=<disputeId> opens that conversation.
+  useEffect(() => {
+    const threadId = searchParams.get('thread');
+    if (!threadId || activeDispute) return;
+    if (demo) {
+      const found = (disputes.data || []).find(d => d._id === threadId);
+      if (found) setActiveDispute(found);
+      setSearchParams({}, { replace: true });
+      return;
+    }
+    let cancelled = false;
+    api.get(`/disputes/${threadId}`)
+      .then(res => { if (!cancelled) setActiveDispute(res.data.data); })
+      .catch(() => {})
+      .finally(() => setSearchParams({}, { replace: true }));
+    return () => { cancelled = true; };
+  }, [searchParams, activeDispute, demo, disputes.data, setSearchParams]);
 
   // Live thread: poll the open conversation so the dairy's replies appear
   // without a refresh. Paused while typing or when the tab is hidden.

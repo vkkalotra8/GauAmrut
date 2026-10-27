@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useSelector } from 'react-redux';
+import { useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { MessageSquare, AlertCircle, CheckCircle2, XCircle, Send, ShieldCheck, Clock } from 'lucide-react';
 import { Heading, Notice, State, Empty, Modal, Field } from '../../components/ui';
@@ -19,6 +20,7 @@ export default function Disputes() {
   const resource = useData(query, demoDisputes);
 
   const [activeDispute, setActiveDispute] = useState(null);
+  const [searchParams, setSearchParams] = useSearchParams();
   const [resolvingModal, setResolvingModal] = useState(false);
   const [replyMessage, setReplyMessage] = useState('');
   const [error, setError] = useState('');
@@ -39,6 +41,25 @@ export default function Disputes() {
       setActiveDispute(d);
     }
   }
+
+  // Deep link: a notification carries ?thread=<disputeId>. Open that thread and
+  // strip the query so closing it doesn't reopen on the next render.
+  useEffect(() => {
+    const threadId = searchParams.get('thread');
+    if (!threadId || activeDispute) return;
+    if (demo) {
+      const found = (resource.data || []).find(d => d._id === threadId);
+      if (found) setActiveDispute(found);
+      setSearchParams({}, { replace: true });
+      return;
+    }
+    let cancelled = false;
+    api.get(`/disputes/${threadId}`)
+      .then(res => { if (!cancelled) setActiveDispute(res.data.data); })
+      .catch(() => {})
+      .finally(() => setSearchParams({}, { replace: true }));
+    return () => { cancelled = true; };
+  }, [searchParams, activeDispute, demo, resource.data, setSearchParams]);
 
   // Live thread: while the modal is open, poll for new replies so the other
   // party's messages appear without a manual refresh. Skips while typing or the
