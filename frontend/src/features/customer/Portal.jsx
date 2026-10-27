@@ -334,6 +334,13 @@ export function CustomerPayments() {
 
   const totalOutstanding = bills.data?.reduce((sum, b) => sum + (b.closingPaise || 0), 0) || 0;
 
+  // Current month is viewable before it closes: fetch the till-date statement so
+  // it can be listed alongside finalized bills (unless a bill already exists).
+  const currentMonth = serviceDate().slice(0, 7);
+  const statement = useData(`/bills/statement?month=${currentMonth}`);
+  const currentBill = bills.data?.find(b => b.month === currentMonth);
+  const currentMonthRow = currentBill || (statement.data && statement.data.month === currentMonth ? statement.data : null);
+
   async function submitClaim(e) {
     e.preventDefault();
     setBusy(true);
@@ -366,16 +373,18 @@ export function CustomerPayments() {
     }
   }
 
-  async function fetchBillPdf(billId, month) {
-    const r = await api.get(`/bills/${billId}/pdf`, { responseType: 'blob' });
-    return { blob: r.data, filename: `bill-${month}.pdf` };
+  async function fetchBillPdf(bill) {
+    // A finalized bill downloads by id; the in-progress month uses the statement.
+    const endpoint = bill._id ? `/bills/${bill._id}/pdf` : `/bills/statement.pdf?month=${bill.month}`;
+    const r = await api.get(endpoint, { responseType: 'blob' });
+    return { blob: r.data, filename: `bill-${bill.month}${bill.provisional ? '-till-date' : ''}.pdf` };
   }
 
   const [shareBill, setShareBill] = useState(null);
 
-  async function downloadBillPdf(billId, month) {
+  async function downloadBillPdf(bill) {
     try {
-      const { blob, filename } = await fetchBillPdf(billId, month);
+      const { blob, filename } = await fetchBillPdf(bill);
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -387,9 +396,9 @@ export function CustomerPayments() {
     }
   }
 
-  async function shareBillPdf(billId, month) {
+  async function shareBillPdf(bill) {
     try {
-      const { blob, filename } = await fetchBillPdf(billId, month);
+      const { blob, filename } = await fetchBillPdf(bill);
       setShareBill({ blob, filename });
     } catch (err) {
       setNotice(message(err));
@@ -428,7 +437,12 @@ export function CustomerPayments() {
           )}
         </div>
         <State resource={bills}>
-          {bills.data?.length ? (
+          {(() => {
+            const pastBills = (bills.data || []).filter(b => b.month !== currentMonth);
+            if (!pastBills.length && !currentMonthRow) {
+              return <Empty>{t('customerPortal.noBills', 'No finalized bills yet.')}</Empty>;
+            }
+            return (
             <div className="table-scroll">
               <table>
                 <thead>
@@ -443,7 +457,46 @@ export function CustomerPayments() {
                   </tr>
                 </thead>
                 <tbody>
-                  {bills.data.map(b => (
+                  {currentMonthRow && (
+                    <tr key="current-month">
+                      <td>
+                        <b>{currentMonthRow.month}</b>
+                        {!currentBill && (
+                          <span className="pill pending" style={{ marginLeft: '6px' }}>
+                            {t('payments.tillDate', 'Till date')}
+                          </span>
+                        )}
+                      </td>
+                      <td>{money(currentMonthRow.openingPaise)}</td>
+                      <td>{money(currentMonthRow.chargesPaise)}</td>
+                      <td>{money(currentMonthRow.paidPaise)}</td>
+                      <td><b>{money(currentMonthRow.closingPaise)}</b></td>
+                      <td>
+                        <span className={`status ${currentMonthRow.closingPaise === 0 ? '' : 'pending'}`}>
+                          {currentMonthRow.closingPaise === 0 ? t('payments.paidStatus', 'Settled') : t('payments.dueStatus', 'Payment due')}
+                        </span>
+                      </td>
+                      <td>
+                        <button
+                          type="button"
+                          className="text-button"
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                          onClick={() => downloadBillPdf(currentMonthRow)}
+                        >
+                          <Download size={14} /> PDF
+                        </button>
+                        <button
+                          type="button"
+                          className="text-button"
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', marginLeft: '8px' }}
+                          onClick={() => shareBillPdf(currentMonthRow)}
+                        >
+                          <Send size={14} /> WhatsApp
+                        </button>
+                      </td>
+                    </tr>
+                  )}
+                  {pastBills.map(b => (
                     <tr key={b._id}>
                       <td><b>{b.month}</b></td>
                       <td>{money(b.openingPaise)}</td>
@@ -460,7 +513,7 @@ export function CustomerPayments() {
                           type="button"
                           className="text-button"
                           style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}
-                          onClick={() => downloadBillPdf(b._id, b.month)}
+                          onClick={() => downloadBillPdf(b)}
                         >
                           <Download size={14} /> PDF
                         </button>
@@ -468,7 +521,7 @@ export function CustomerPayments() {
                           type="button"
                           className="text-button"
                           style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', marginLeft: '8px' }}
-                          onClick={() => shareBillPdf(b._id, b.month)}
+                          onClick={() => shareBillPdf(b)}
                         >
                           <Send size={14} /> WhatsApp
                         </button>
@@ -478,9 +531,8 @@ export function CustomerPayments() {
                 </tbody>
               </table>
             </div>
-          ) : (
-            <Empty>{t('customerPortal.noBills', 'No finalized bills yet.')}</Empty>
-          )}
+            );
+          })()}
         </State>
         {platform?.invoice?.footer && <p className="invoice-footer-note">{platform.invoice.footer}</p>}
         <Pager page={page} setPage={setPage} total={bills.meta?.total || 0} />

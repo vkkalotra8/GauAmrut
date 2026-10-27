@@ -189,4 +189,65 @@ async function recordPayment(req) {
     return paymentObj;
   });
 }
-module.exports = { writeOnce, enterDeliveries, generateBill, recordPayment, refreshBilledMonths, outstandingByCustomer };
+// A "till-date statement" for a customer for any month up to the current one.
+// If a finalized bill exists for that month it is returned verbatim (provisional:
+// false). Otherwise a provisional statement is composed on the fly so the current
+// month is always viewable/downloadable before the month closes:
+//   opening = latest bill's closing (or the customer's opening balance) rolled
+//             back by any payments already applied to that bill this month,
+//   charges = deliveries recorded this month up to today,
+//   paid    = payments applied to the latest bill during this month,
+//   closing = opening + charges - paid.
+async function billStatement({ tenant, customerId, month }) {
+  const currentMonth = today().slice(0, 7);
+  if (!/^\d{4}-\d{2}$/.test(month) || month > currentMonth) {
+    throw new AppError(409, 'FUTURE_MONTH', 'Statements cannot be prepared for a month that has not started yet.');
+  }
+
+  const existing = await Bill.findOne({ milkman_id: tenant, customer_id: customerId, month }).lean();
+  if (existing) return { ...existing, provisional: false };
+
+  const customer = await Customer.findOne({ _id: customerId, milkman_id: tenant }).lean();
+  if (!customer) throw new AppError(404, 'NOT_FOUND', 'Customer was not found.');
+
+  const previous = await Bill.findOne({ milkman_id: tenant, customer_id: customerId, month: { $lt: month } }).sort({ month: -1 }).lean();
+  const monthStart = new Date(month + '-01T00:00:00+05:30');
+  const monthEnd = new Date(month + '-31T23:59:59.999+05:30');
+
+  // Payments recorded this month that were applied to the latest bill (or, when
+  // there is no earlier bill, to any bill for this customer).
+  const paidFilter = {
+    milkman_id: tenant,
+    customer_id: customerId,
+    deleted: false,
+    reversed: false,
+    createdAt: { $gte: monthStart, $lte: monthEnd },
+    ...(previous ? { bill_id: previous._id } : {})
+  };
+  const [records, payments] = await Promise.all([
+    Record.find({ milkman_id: tenant, customer_id: customerId, deleted: false, date: { $gte: month + '-01', $lte: month + '-31' } }).sort({ date: 1 }).lean(),
+    Payment.find(paidFilter).sort({ createdAt: 1 }).lean()
+  ]);
+
+  const chargesPaise = records.reduce((sum, r) => sum + r.totalPaise, 0);
+  const paidThisMonth = payments.reduce((sum, p) => sum + p.amountPaise, 0);
+  const priorClosing = previous ? previous.closingPaise : (customer.openingBalancePaise || 0);
+  // previous.closingPaise already nets off payments applied to it, so roll those
+  // back to recover the balance as it stood at the start of the month.
+  const openingPaise = priorClosing + paidThisMonth;
+  const closingPaise = openingPaise + chargesPaise - paidThisMonth;
+
+  return {
+    _id: null,
+    milkman_id: tenant,
+    customer_id: customerId,
+    month,
+    openingPaise,
+    chargesPaise,
+    paidPaise: paidThisMonth,
+    closingPaise,
+    currency: 'INR',
+    provisional: true
+  };
+}
+module.exports = { writeOnce, enterDeliveries, generateBill, recordPayment, refreshBilledMonths, outstandingByCustomer, billStatement };

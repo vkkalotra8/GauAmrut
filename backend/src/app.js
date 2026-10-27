@@ -11,7 +11,7 @@ const { User, Customer, Record, Bill, Payment, Adjustment, Milkman, PaymentReque
 const { auth, vendor, validate, wrap, scope } = require('./middleware');
 const { AppError, today, csvCell, charge } = require('./domain');
 const schemas = require('./validation');
-const { enterDeliveries, generateBill, recordPayment, outstandingByCustomer } = require('./services');
+const { enterDeliveries, generateBill, recordPayment, outstandingByCustomer, billStatement } = require('./services');
 const { accountsRoutes, change } = require('./accounts');
 const { runMonthlyBillingScheduler } = require('./billing-scheduler');
 const { createNotification, getNotifications, markRead, markAllRead } = require('./notifications');
@@ -159,6 +159,57 @@ function createApp(redis) {
     res.set({
       'Content-Type': 'application/pdf',
       'Content-Disposition': `attachment; filename="gauamrut-bill-${bill.month}.pdf"`,
+      'Content-Length': pdfBuffer.length
+    });
+    res.send(pdfBuffer);
+  }));
+  // Till-date statement: viewable/downloadable for the current month before it
+  // closes, and for any past month that has no finalized bill yet. Customers get
+  // their own statement; dairies may pick any customer of theirs.
+  api.get('/bills/statement', wrap(async (req, res) => {
+    const month = req.query.month || today().slice(0, 7);
+    if (schemas.month.validate(month).error) throw new AppError(400, 'INVALID_MONTH', 'Use YYYY-MM for the statement month.');
+    let customerId = req.user.customer_id;
+    if (req.user.role === 'milkman') {
+      customerId = req.query.customer_id;
+      if (!customerId) throw new AppError(400, 'CUSTOMER_REQUIRED', 'Select a customer for this statement.');
+      if (!(await Customer.exists({ _id: customerId, milkman_id: req.tenant }))) throw new AppError(404, 'NOT_FOUND', 'Customer was not found.');
+    }
+    ok(res, await billStatement({ tenant: req.tenant, customerId, month }));
+  }));
+  // Batch till-date statements for every customer of the dairy (used by the bills
+  // table so the current month is always visible before it closes).
+  api.get('/bills/statements', vendor, wrap(async (req, res) => {
+    const month = req.query.month || today().slice(0, 7);
+    if (schemas.month.validate(month).error) throw new AppError(400, 'INVALID_MONTH', 'Use YYYY-MM for the statement month.');
+    const customers = await Customer.find({ milkman_id: req.tenant }).select('_id').lean();
+    const statements = await Promise.all(
+      customers.map(c => billStatement({ tenant: req.tenant, customerId: c._id, month }).catch(() => null))
+    );
+    ok(res, statements.filter(Boolean));
+  }));
+  api.get('/bills/statement.pdf', wrap(async (req, res) => {
+    const month = req.query.month || today().slice(0, 7);
+    if (schemas.month.validate(month).error) throw new AppError(400, 'INVALID_MONTH', 'Use YYYY-MM for the statement month.');
+    let customerId = req.user.customer_id;
+    if (req.user.role === 'milkman') {
+      customerId = req.query.customer_id;
+      if (!customerId) throw new AppError(400, 'CUSTOMER_REQUIRED', 'Select a customer for this statement.');
+      if (!(await Customer.exists({ _id: customerId, milkman_id: req.tenant }))) throw new AppError(404, 'NOT_FOUND', 'Customer was not found.');
+    }
+    const bill = await billStatement({ tenant: req.tenant, customerId, month });
+    const [milkman, customer, records, payments] = await Promise.all([
+      Milkman.findById(bill.milkman_id).lean(),
+      Customer.findById(bill.customer_id).lean(),
+      Record.find({ milkman_id: bill.milkman_id, customer_id: bill.customer_id, deleted: false, date: { $gte: bill.month + '-01', $lte: bill.month + '-31' } }).sort({ date: 1 }).lean(),
+      bill._id
+        ? Payment.find({ bill_id: bill._id, deleted: false, reversed: false }).sort({ createdAt: 1 }).lean()
+        : Payment.find({ milkman_id: bill.milkman_id, customer_id: bill.customer_id, deleted: false, reversed: false, createdAt: { $gte: new Date(bill.month + '-01T00:00:00+05:30'), $lte: new Date(bill.month + '-31T23:59:59.999+05:30') } }).sort({ createdAt: 1 }).lean()
+    ]);
+    const pdfBuffer = await generateBillPdf({ bill, milkman, customer, records, payments });
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="gauamrut-bill-${bill.month}${bill.provisional ? '-till-date' : ''}.pdf"`,
       'Content-Length': pdfBuffer.length
     });
     res.send(pdfBuffer);

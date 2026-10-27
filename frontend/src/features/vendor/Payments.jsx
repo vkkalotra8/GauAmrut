@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useSelector } from 'react-redux';
 import { useTranslation } from 'react-i18next';
 import { Plus, Check, Search, Receipt, AlertCircle, FileText, CheckCircle2, XCircle, Printer, RotateCcw, Download, Send } from 'lucide-react';
@@ -16,6 +16,7 @@ export default function Payments() {
   const platform = usePlatformSettings();
   const [activeTab, setActiveTab] = useState('bills');
   const [page, setPage] = useState(1);
+  const currentMonth = serviceDate().slice(0, 7);
   const bills = useData(`/bills?page=${page}`, demoBills);
   const customers = useData('/customers?limit=100', demoCustomers);
   const claims = useData('/payment-claims', demoClaims);
@@ -29,10 +30,22 @@ export default function Payments() {
   const [adjustmentModal, setAdjustmentModal] = useState(false);
   const [selectedAdjCustomer, setSelectedAdjCustomer] = useState('');
   const [activeReceipt, setActiveReceipt] = useState(null);
+  const [currentStatements, setCurrentStatements] = useState([]);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
   const [key, setKey] = useState('');
+
+  // Current-month (till-date) statements for every customer, so a dairy can view
+  // and download a bill before the month closes.
+  useEffect(() => {
+    if (demo || activeTab !== 'bills') return;
+    let cancelled = false;
+    api.get(`/bills/statements?month=${currentMonth}`)
+      .then(res => { if (!cancelled) setCurrentStatements(res.data.data || []); })
+      .catch(() => { if (!cancelled) setCurrentStatements([]); });
+    return () => { cancelled = true; };
+  }, [currentMonth, activeTab, demo]);
 
   const open = value => {
     setModal(value);
@@ -218,16 +231,18 @@ export default function Payments() {
     }
   }
 
-  async function fetchBillPdf(billId, month) {
-    const r = await api.get(`/bills/${billId}/pdf`, { responseType: 'blob' });
-    return { blob: r.data, filename: `bill-${month}.pdf` };
+  async function fetchBillPdf(bill) {
+    // Finalized bills download by id; a customer's in-progress month uses the statement.
+    const endpoint = bill._id ? `/bills/${bill._id}/pdf` : `/bills/statement.pdf?month=${bill.month}&customer_id=${bill.customer_id}`;
+    const r = await api.get(endpoint, { responseType: 'blob' });
+    return { blob: r.data, filename: `bill-${bill.month}${bill.provisional ? '-till-date' : ''}.pdf` };
   }
 
   const [shareBill, setShareBill] = useState(null);
 
-  async function downloadBillPdf(billId, month) {
+  async function downloadBillPdf(bill) {
     try {
-      const { blob, filename } = await fetchBillPdf(billId, month);
+      const { blob, filename } = await fetchBillPdf(bill);
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -239,14 +254,45 @@ export default function Payments() {
     }
   }
 
-  async function shareBillPdf(billId, month) {
+  async function shareBillPdf(bill) {
     try {
-      const { blob, filename } = await fetchBillPdf(billId, month);
+      const { blob, filename } = await fetchBillPdf(bill);
       setShareBill({ blob, filename });
     } catch (err) {
       setNotice(message(err));
     }
   }
+
+  const customerNameOf = id => customers.data?.find(c => c._id === id)?.name || id;
+  const pastBills = (bills.data || []).filter(b => b.month !== currentMonth);
+
+  // Current-month (till-date) statement per customer: use the finalized bill for
+  // this month if one exists, otherwise fall back to the live statement feed.
+  const currentRows = useMemo(() => {
+    const byCustomer = new Map();
+    for (const b of bills.data || []) {
+      if (b.month === currentMonth) byCustomer.set(b.customer_id, { bill: b, provisional: false });
+    }
+    for (const s of currentStatements) {
+      if (!byCustomer.has(s.customer_id)) byCustomer.set(s.customer_id, { bill: s, provisional: true });
+    }
+    return [...byCustomer.values()];
+  }, [bills.data, currentStatements, currentMonth]);
+
+  const billRows = [
+    ...currentRows.map(({ bill, provisional }) => ({
+      key: `current-${bill.customer_id}`,
+      customerName: customerNameOf(bill.customer_id),
+      provisional,
+      bill: { ...bill, customer_id: bill.customer_id }
+    })),
+    ...pastBills.map(b => ({
+      key: b._id,
+      customerName: customerNameOf(b.customer_id),
+      provisional: false,
+      bill: b
+    }))
+  ];
 
   return (
     <>
@@ -314,7 +360,7 @@ export default function Payments() {
           </div>
           {bills.data?.length > 0 && <CollectionsDonut bills={bills.data}/>}
           <State resource={bills}>
-            {bills.data?.length ? (
+            {billRows.length ? (
               <div className="table-scroll">
                 <table>
                   <thead>
@@ -329,10 +375,19 @@ export default function Payments() {
                     </tr>
                   </thead>
                   <tbody>
-                    {bills.data.map(b => (
-                      <tr key={b._id}>
-                        <td><b>{customers.data?.find(c => c._id === b.customer_id)?.name || b.customer_id}</b></td>
-                        <td>{b.month}</td>
+                    {billRows.map(row => {
+                      const b = row.bill;
+                      return (
+                      <tr key={row.key}>
+                        <td><b>{row.customerName}</b></td>
+                        <td>
+                          {b.month}
+                          {row.provisional && (
+                            <span className="pill pending" style={{ marginLeft: '6px' }}>
+                              {t('payments.tillDate', 'Till date')}
+                            </span>
+                          )}
+                        </td>
                         <td>{money(b.openingPaise)}</td>
                         <td>{money(b.chargesPaise)}</td>
                         <td>{money(b.paidPaise)}</td>
@@ -344,7 +399,7 @@ export default function Payments() {
                               className="text-button"
                               style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}
                               title="Download PDF Bill"
-                              onClick={() => downloadBillPdf(b._id, b.month)}
+                              onClick={() => downloadBillPdf(b)}
                             >
                               <Download size={14} /> PDF
                             </button>
@@ -353,21 +408,22 @@ export default function Payments() {
                               className="text-button"
                               style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}
                               title="Share PDF bill on WhatsApp"
-                              onClick={() => shareBillPdf(b._id, b.month)}
+                              onClick={() => shareBillPdf(b)}
                             >
                               <Send size={14} /> WhatsApp
                             </button>
-                            {b.closingPaise > 0 ? (
+                            {!row.provisional && (b.closingPaise > 0 ? (
                               <button type="button" className="button small" onClick={() => open(b)}>
                                 {t('payments.recordPayment', 'Record payment')}
                               </button>
                             ) : (
                               <span className="status"><Check size={13} /> {t('payments.paidStatus', 'Settled')}</span>
-                            )}
+                            ))}
                           </div>
                         </td>
                       </tr>
-                    ))}
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
