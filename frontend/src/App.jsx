@@ -109,7 +109,8 @@ function Customers() {
 }
 function Pagination({ page, setPage, total }) { return <div className="pagination"><small>{total} results · Page {page}</small><button className="icon-button" disabled={page === 1} onClick={() => setPage(page - 1)} aria-label="Previous page"><ChevronLeft size={18}/></button><button className="icon-button" disabled={page * 50 >= total} onClick={() => setPage(page + 1)} aria-label="Next page"><ChevronRight size={18}/></button></div>; }
 function Reports() {
-  const demo = useSelector(s => s.session.demo), [month, setMonth] = useState(serviceDate().slice(0, 7)), [error, setError] = useState(''), [notice, setNotice] = useState(''), [busyReport, setBusyReport] = useState(''), [share, setShare] = useState(null);
+  const demo = useSelector(s => s.session.demo), role = useSelector(s => s.session.user?.role), [month, setMonth] = useState(serviceDate().slice(0, 7)), [error, setError] = useState(''), [notice, setNotice] = useState(''), [busyReport, setBusyReport] = useState(''), [share, setShare] = useState(null);
+  const showCustomerDirectory = role !== 'customer';
   function reportTarget(type) {
     const target = {
       deliveries: [`/reports/deliveries.csv?month=${month}`, `gauamrut-deliveries-${month}.csv`],
@@ -165,7 +166,7 @@ function Reports() {
     }
   }
   return <>
-    <Heading eyebrow="THE DETAILS THAT MATTER." title="Your dairy, in numbers" description="Take accurate delivery records, payment ledgers, and customer summaries wherever you need them."/>
+    <Heading eyebrow="THE DETAILS THAT MATTER." title="Your dairy, in numbers" description={showCustomerDirectory ? 'Take accurate delivery records, payment ledgers, and customer summaries wherever you need them.' : 'Take your delivery records, payment ledgers, and order history wherever you need them.'}/>
     <Notice>{notice}</Notice>
     <Notice error>{error}</Notice>
     <div className="reports-grid">
@@ -205,6 +206,7 @@ function Reports() {
         </div>
       </section>
 
+      {showCustomerDirectory && (
       <section className="card report-card">
         <span className="report-icon"><Users size={32}/></span>
         <h2>Customer directory summary</h2>
@@ -224,6 +226,7 @@ function Reports() {
           </button>
         </div>
       </section>
+      )}
 
       <section className="card report-card">
         <span className="report-icon"><ShoppingBag size={32}/></span>
