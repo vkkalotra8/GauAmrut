@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSelector } from 'react-redux';
 import { Navigate, NavLink, Route, Routes, useLocation } from 'react-router-dom';
 import { BarChart3, Cpu, Download, Leaf, LayoutDashboard, LogOut, Mail, Megaphone, Menu, MoreHorizontal, QrCode, Receipt, Scale, ScrollText, Send, Settings as SettingsIcon, ShieldCheck, Store, UserPlus, Users, Wifi, WifiOff } from 'lucide-react';
@@ -158,9 +158,22 @@ function UserDetailModal({ user, close }) {
       const { data } = await api.post(`/admin/users/${user._id}/verification-request`, { channels: [channel] });
       const delivered = data.data?.delivered || [];
       const skipped = data.data?.skipped || [];
+      // The backend reports why a channel was skipped; say it in words the
+      // admin can act on rather than echoing the raw code.
+      const reasons = {
+        WHATSAPP_UNAVAILABLE: 'WhatsApp is not connected — link it under Settings → WhatsApp connection, then retry.',
+        EMAIL_UNAVAILABLE: 'the email service is not configured, so the code could not be sent.',
+        NO_ACCOUNT: 'this profile has no sign-in account.',
+        NO_MOBILE: 'this profile has no mobile number on file.',
+        NO_EMAIL: 'this profile has no email address on file.',
+        SEND_FAILED: 'the code could not be delivered, please retry.'
+      };
       const parts = [];
       if (delivered.length) parts.push(`Code sent for ${delivered.join(' and ')}.`);
-      for (const s of skipped) parts.push(`${s.channel}: ${String(s.reason || '').replaceAll('_', ' ').toLowerCase()}.`);
+      for (const s of skipped) {
+        const reason = reasons[s.reason] || `${String(s.reason || 'SEND_FAILED').replaceAll('_', ' ').toLowerCase()}.`;
+        parts.push(`${s.channel === 'phone' ? 'Mobile' : 'Email'}: ${reason}`);
+      }
       setNotice(parts.join(' ') || 'Request processed.');
       resource.reload();
     } catch (err) {
@@ -826,6 +839,9 @@ function SettingCard({ section, doc, canManage, onSaved }) {
 
 function WhatsAppCard({ canManage }) {
   const [status, setStatus] = useState(null), [busy, setBusy] = useState(''), [error, setError] = useState(''), [qr, setQr] = useState('');
+  const qrRef = useRef('');
+  const watchRef = useRef(null);
+  useEffect(() => { qrRef.current = qr; }, [qr]);
 
   async function loadStatus() {
     try {
@@ -835,21 +851,36 @@ function WhatsAppCard({ canManage }) {
       setError(message(err));
     }
   }
-  useEffect(() => { loadStatus(); }, []);
+  useEffect(() => {
+    loadStatus();
+    return () => clearInterval(watchRef.current);
+  }, []);
 
-  function pollUntilConnected() {
-    let attempts = 0;
-    const timer = setInterval(async () => {
-      attempts += 1;
+  // Baileys rotates the pairing code roughly every 20 seconds while nobody has
+  // scanned it, and a code that has already expired is rejected by the phone
+  // with "Couldn't link device". Keep the image in step with the server so the
+  // code on screen is always the one that is currently valid.
+  function watchConnection() {
+    clearInterval(watchRef.current);
+    let withoutCode = 0;
+    watchRef.current = setInterval(async () => {
       try {
         const { data } = await api.get('/admin/whatsapp/status');
-        setStatus(data.data);
-        if (data.data.connected || attempts >= 40) clearInterval(timer);
-        if (data.data.connected) setQr('');
+        const next = data.data;
+        setStatus(next);
+        if (next.connected) { setQr(''); clearInterval(watchRef.current); return; }
+        if (next.qr) {
+          withoutCode = 0;
+          if (next.qr !== qrRef.current) setQr(next.qr);
+        } else if (++withoutCode >= 3) {
+          // The socket dropped and has not issued a replacement yet; drop the
+          // dead image so the button offers to show a new one.
+          setQr('');
+        }
       } catch {
-        clearInterval(timer);
+        clearInterval(watchRef.current);
       }
-    }, 3000);
+    }, 1000);
   }
 
   async function showQr() {
@@ -858,7 +889,7 @@ function WhatsAppCard({ canManage }) {
     try {
       const { data } = await api.post('/admin/whatsapp/qr');
       setQr(data.data.qr);
-      pollUntilConnected();
+      watchConnection();
     } catch (err) {
       setError(message(err));
     } finally {
@@ -869,6 +900,7 @@ function WhatsAppCard({ canManage }) {
   async function disconnect() {
     setBusy('disconnect');
     setError('');
+    clearInterval(watchRef.current);
     try {
       await api.post('/admin/whatsapp/disconnect');
       setQr('');
@@ -900,7 +932,7 @@ function WhatsAppCard({ canManage }) {
       {qr && (
         <div style={{ textAlign: 'center' }}>
           <img src={qr} alt="WhatsApp linking QR code" style={{ width: 240, height: 240, borderRadius: 12, border: '1px solid var(--border, #e3ebe4)' }}/>
-          <p className="form-note">Waiting for the phone to scan this code…</p>
+          <p className="form-note">Waiting for the phone to scan this code… It refreshes automatically, so scan it as soon as it appears.</p>
         </div>
       )}
       {canManage && (

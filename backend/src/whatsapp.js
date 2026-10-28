@@ -10,8 +10,15 @@ let sock = null;
 let connecting = false;
 let connected = false;
 let qrDataUrl = null;
+let qrGeneratedAt = null;
 let waPhone = null;
 let shuttingDown = false;
+
+// WhatsApp only honours a pairing code for a short window (Baileys rotates the
+// first one after 60s and every 20s after that). A code older than this is
+// replaced rather than re-served — the phone rejects an expired or already
+// consumed one with "Couldn't link device".
+const QR_MAX_AGE_MS = 15000;
 
 const authDir = () => path.join(__dirname, '..', '.wa-auth');
 
@@ -28,6 +35,10 @@ function normalizeNumber(raw) {
 
 function clearAuth() { fs.rmSync(authDir(), { recursive: true, force: true }); }
 
+// A pairing code belongs to the socket that issued it; once that socket is gone
+// the code is dead and must not be handed out again.
+function clearQr() { qrDataUrl = null; qrGeneratedAt = null; }
+
 async function connect() {
   if (sock || connecting) return;
   connecting = true;
@@ -39,7 +50,11 @@ async function connect() {
     const { state, saveCreds } = await useMultiFileAuthState(authDir());
     let version;
     try { ({ version } = await fetchLatestBaileysVersion()); } catch { /* use Baileys' bundled WhatsApp version */ }
-    sock = makeWASocket({
+    // Logged so a rejected pairing can be traced to a stale client version —
+    // WhatsApp answers "Try again later" when the phone and the socket
+    // disagree about which build of the protocol they are speaking.
+    console.error(JSON.stringify({ event: 'whatsapp_connecting', version: Array.isArray(version) ? version.join('.') : 'bundled' }));
+    const socket = makeWASocket({
       auth: { creds: state.creds, keys: makeCacheableSignalKeyStore(state.keys, logger) },
       ...(version ? { version } : {}),
       logger,
@@ -47,22 +62,32 @@ async function connect() {
       markOnlineOnConnect: false,
       syncFullHistory: false
     });
-    sock.ev.on('creds.save', saveCreds);
-    sock.ev.on('connection.update', update => {
+    sock = socket;
+    // A refresh tears the old socket down first; its late events must not
+    // resurrect it or overwrite the code the replacement socket is issuing.
+    const isCurrent = () => sock === socket;
+    socket.ev.on('creds.save', () => { if (isCurrent()) saveCreds(); });
+    socket.ev.on('connection.update', update => {
+      if (!isCurrent()) return;
       const { connection, lastDisconnect, qr } = update;
-      if (qr) QRCode.toDataURL(qr).then(url => { qrDataUrl = url; }).catch(() => {});
+      if (qr) {
+        QRCode.toDataURL(qr)
+          .then(url => { if (isCurrent()) { qrDataUrl = url; qrGeneratedAt = Date.now(); } })
+          .catch(() => {});
+      }
       if (connection === 'open') {
         connected = true;
-        qrDataUrl = null;
-        try { waPhone = jidNormalizedUser(sock.user.id).split('@')[0]; } catch { waPhone = null; }
+        clearQr();
+        try { waPhone = jidNormalizedUser(socket.user.id).split('@')[0]; } catch { waPhone = null; }
         console.error(JSON.stringify({ event: 'whatsapp_connected', phone: waPhone }));
       }
       if (connection === 'close') {
         connected = false;
         sock = null;
+        clearQr();
         const code = lastDisconnect?.error?.output?.statusCode;
         if (code === DisconnectReason.loggedOut) {
-          waPhone = null; qrDataUrl = null;
+          waPhone = null;
           clearAuth();
           console.error(JSON.stringify({ event: 'whatsapp_logged_out' }));
         } else if (!shuttingDown) {
@@ -80,9 +105,25 @@ async function status() {
   return { connected, phone: waPhone, qr: qrDataUrl };
 }
 
-// Starts the connection if needed and waits (up to ~10s) for a QR payload.
+// Drops the live socket (leaving the saved session untouched) so Baileys asks
+// WhatsApp for a brand-new pairing code instead of re-showing the last one.
+async function restartForQr() {
+  const old = sock;
+  sock = null;
+  connecting = false;
+  connected = false;
+  clearQr();
+  if (old) { try { old.end(); } catch { /* socket already gone */ } }
+  await new Promise(resolve => setTimeout(resolve, 300));
+}
+
+// Starts the connection if needed and returns a code the phone can actually
+// scan: one left over from an earlier attempt is replaced, because WhatsApp
+// rejects anything already expired or already consumed with "Couldn't link
+// device".
 async function getQr() {
   if (connected) return null;
+  if (qrDataUrl && Date.now() - qrGeneratedAt > QR_MAX_AGE_MS) await restartForQr();
   await connect();
   for (let i = 0; i < 40 && !connected && !qrDataUrl; i++) await new Promise(resolve => setTimeout(resolve, 250));
   return qrDataUrl;
@@ -118,7 +159,7 @@ async function disconnect() {
   try { if (sock) await sock.logout(); } catch { /* session already gone */ }
   sock = null;
   connected = false;
-  qrDataUrl = null;
+  clearQr();
   waPhone = null;
   clearAuth();
 }

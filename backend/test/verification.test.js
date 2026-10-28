@@ -167,6 +167,9 @@ describe('contact verification', () => {
       const failed = await request(app).post('/api/profile/verification/request').set('Authorization', `Bearer ${customerToken}`).send({ channel: 'phone' });
       expect(failed.status).toBe(503);
       expect(failed.body.error.code).toBe('WHATSAPP_UNAVAILABLE');
+      // Deliberate 5xxs carry the instruction the caller needs; only genuine
+      // failures are hidden behind the generic retry notice.
+      expect(failed.body.error.message).toBe('down');
     } finally {
       process.env.DEV_SHOW_OTP = 'true';
     }

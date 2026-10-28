@@ -1351,7 +1351,12 @@ function createApp(redis) {
   app.use((error, req, res, _next) => {
     const status = error.status || (error.code === 11000 ? 409 : ['ValidationError', 'CastError', 'StrictModeError'].includes(error.name) ? 400 : 500);
     if (status >= 500) console.error(JSON.stringify({ event: 'request_failed', requestId: req.requestId, code: error.code || error.name }));
-    res.status(status).json({ error: { code: error.code === 11000 ? 'DUPLICATE_RECORD' : typeof error.code === 'string' ? error.code : status === 400 ? 'VALIDATION_ERROR' : 'INTERNAL_ERROR', message: status >= 500 ? 'The service could not complete this request. Please retry.' : error.code === 11000 ? 'This record already exists.' : error.message } });
+    // AppErrors are raised on purpose, with a message written for the person
+    // reading it — at a 503 "WhatsApp is not connected yet, scan the QR code
+    // in Settings" is precisely what they need. Only genuinely unexpected
+    // failures are hidden behind the generic retry notice.
+    const hidden = status >= 500 && !(error instanceof AppError);
+    res.status(status).json({ error: { code: error.code === 11000 ? 'DUPLICATE_RECORD' : typeof error.code === 'string' ? error.code : status === 400 ? 'VALIDATION_ERROR' : 'INTERNAL_ERROR', message: hidden ? 'The service could not complete this request. Please retry.' : error.code === 11000 ? 'This record already exists.' : error.message } });
   });
   return app;
 }
