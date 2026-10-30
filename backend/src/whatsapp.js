@@ -18,6 +18,7 @@ let pairingSocket = null;
 let waPhone = null;
 let shuttingDown = false;
 let lastError = null;
+let reconnectTimer = null;
 let versionCache = { at: 0, version: null, source: 'bundled' };
 
 // WhatsApp only honours a pairing code for a short window (Baileys rotates the
@@ -104,6 +105,8 @@ async function resolveVersion() {
 
 async function connect() {
   if (sock || connecting) return;
+  clearTimeout(reconnectTimer);
+  reconnectTimer = null;
   connecting = true;
   try {
     const { default: makeWASocket, useMultiFileAuthState, makeCacheableSignalKeyStore, DisconnectReason, jidNormalizedUser } = require('@whiskeysockets/baileys');
@@ -125,7 +128,11 @@ async function connect() {
     // A refresh tears the old socket down first; its late events must not
     // resurrect it or overwrite the code the replacement socket is issuing.
     const isCurrent = () => sock === socket;
-    socket.ev.on('creds.save', () => { if (isCurrent()) saveCreds(); });
+    // Baileys 6.7.x emits 'creds.update' only — there is no 'creds.save' in the
+    // package at all. Listen for the wrong one and saveCreds() never runs, the
+    // session is never written to disk, and every reconnect starts blank, so the
+    // phone's half-finished pairing has nothing to resume from.
+    socket.ev.on('creds.update', () => { if (isCurrent()) saveCreds(); });
     socket.ev.on('connection.update', update => {
       if (!isCurrent()) return;
       const { connection, lastDisconnect, qr } = update;
@@ -138,6 +145,10 @@ async function connect() {
         connected = true;
         clearPairing();
         lastError = null;
+        // A link only survives a restart if it reaches disk; write it the
+        // moment the session is confirmed rather than waiting for the next
+        // credential change that may never come.
+        try { saveCreds(); } catch { /* still linked in memory */ }
         try { waPhone = jidNormalizedUser(socket.user.id).split('@')[0]; } catch { waPhone = null; }
         console.error(JSON.stringify({ event: 'whatsapp_connected', phone: waPhone }));
       }
@@ -157,7 +168,13 @@ async function connect() {
         } else if (!shuttingDown) {
           // 515 is WhatsApp telling a freshly paired client to reconnect with
           // its new credentials; waiting risks the phone invalidating the link.
-          setTimeout(() => connect().catch(() => {}), code === DisconnectReason.restartRequired ? 0 : 3000);
+          // One pending reconnect at a time — a second socket races the first
+          // and both fight over the same pairing reference.
+          clearTimeout(reconnectTimer);
+          reconnectTimer = setTimeout(() => {
+            reconnectTimer = null;
+            connect().catch(() => {});
+          }, code === DisconnectReason.restartRequired ? 0 : 3000);
         }
       }
     });
@@ -178,6 +195,10 @@ async function restartForQr() {
   sock = null;
   connecting = false;
   connected = false;
+  // A reconnect scheduled by the socket we are about to drop must not fire
+  // behind our back and create a second live connection.
+  clearTimeout(reconnectTimer);
+  reconnectTimer = null;
   clearPairing();
   if (old) { try { old.end(); } catch { /* socket already gone */ } }
   await sleep(300);
@@ -253,12 +274,17 @@ async function sendDocument(number, buffer, fileName, caption = '') {
 }
 
 async function disconnect() {
+  clearTimeout(reconnectTimer);
+  reconnectTimer = null;
+  shuttingDown = true;
   try { if (sock) await sock.logout(); } catch { /* session already gone */ }
   sock = null;
   connected = false;
   clearPairing();
   waPhone = null;
+  lastError = null;
   clearAuth();
+  shuttingDown = false;
 }
 
 module.exports = { status, getQr, getPairingCode, sendText, sendDocument, disconnect, normalizeNumber };

@@ -131,6 +131,26 @@ describe('WhatsApp device linking', () => {
     expect(await whatsapp.getQr()).toBeNull();
   });
 
+  test('persists credentials, so a reconnect can resume the pairing', async () => {
+    await whatsapp.getQr();
+    const { saveCreds } = await baileys.useMultiFileAuthState.mock.results[0].value;
+    expect(saveCreds).not.toHaveBeenCalled();
+
+    // Baileys announces every credential change this way — including the
+    // pairingCode and me that requestPairingCode() sets, and the registered
+    // flag that pair-success sets. Baileys 6.7.x emits no 'creds.save', so a
+    // handler on that event never fires and the session never reaches disk:
+    // the next reconnect starts blank and the phone reports
+    // "Couldn't link device" after its own 515 restart.
+    baileys.sockets[0].ev.emit('creds.update', { pairingCode: 'ABCDE123', me: { id: '919876543210@s.whatsapp.net' } });
+    expect(saveCreds).toHaveBeenCalledTimes(1);
+
+    // A confirmed link is written immediately rather than waiting for a further
+    // change that may never arrive.
+    baileys.sockets[0].ev.emit('connection.update', { connection: 'open' });
+    expect(saveCreds).toHaveBeenCalledTimes(2);
+  });
+
   test('an unlinked session refuses to send, with a message worth showing', async () => {
     // The 503's wording is what tells an admin where to go; the API error
     // handler must pass it through instead of masking it as a generic 5xx.
