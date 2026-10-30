@@ -129,11 +129,11 @@ export default function NotificationsDrawer() {
 
           <div className="notifications-list">
             {loading && !notifications.length ? (
-              <div style={{ padding: '20px', textAlign: 'center', color: 'var(--muted)', fontSize: '12px' }}>
+              <div style={{ padding: '20px', textAlign: 'center', color: 'var(--muted-foreground)', fontSize: '12px' }}>
                 Loading notifications…
               </div>
             ) : notifications.length === 0 ? (
-              <div style={{ padding: '28px 16px', textAlign: 'center', color: 'var(--muted)', fontSize: '12px' }}>
+              <div style={{ padding: '28px 16px', textAlign: 'center', color: 'var(--muted-foreground)', fontSize: '12px' }}>
                 No notifications right now.
               </div>
             ) : (

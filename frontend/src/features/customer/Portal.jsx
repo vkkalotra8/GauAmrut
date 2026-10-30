@@ -648,12 +648,12 @@ export function CustomerPayments() {
                           </span>
                         </td>
                         <td>
-                          <b style={{ color: adj.type === 'debit' || adj.type === 'refund' ? 'var(--danger)' : 'var(--green)' }}>
+                          <b style={{ color: adj.type === 'debit' || adj.type === 'refund' ? 'var(--destructive-soft-foreground)' : 'var(--success-foreground)' }}>
                             {adj.type === 'debit' || adj.type === 'refund' ? '+' : '-'}{money(adj.amountPaise)}
                           </b>
                         </td>
                         <td>{adj.reason}</td>
-                        <td>{adj.billMonth ? <code>{adj.billMonth}</code> : <span style={{ color: 'var(--muted)' }}>Account</span>}</td>
+                        <td>{adj.billMonth ? <code>{adj.billMonth}</code> : <span style={{ color: 'var(--muted-foreground)' }}>Account</span>}</td>
                         <td>
                           {adj.status === 'reversed' ? (
                             <span className="status danger">
@@ -739,7 +739,7 @@ export function CustomerPayments() {
         <Modal title={t('customerPortal.claimModalTitle', 'Submit a payment claim')} close={() => setClaimModalOpen(false)}>
           <form onSubmit={submitClaim}>
             <div className="note-strip" style={{ marginBottom: '14px' }}>
-              <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '4px' }}>
+              <div style={{ fontSize: '12px', color: 'var(--muted-foreground)', marginBottom: '4px' }}>
                 {t('customerPortal.payToDairy', 'Pay directly to your dairy owner via UPI:')}
               </div>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
@@ -796,25 +796,25 @@ export function CustomerPayments() {
           <div className="receipt-card">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '1px dashed var(--border)', paddingBottom: '14px', marginBottom: '14px' }}>
               <div>
-                <b style={{ fontSize: '18px', color: 'var(--green)' }}>{activeReceipt.dairy?.businessName}</b>
-                <div style={{ fontSize: '12px', color: 'var(--muted)' }}>{activeReceipt.dairy?.ownerName} · {activeReceipt.dairy?.phone}</div>
-                {activeReceipt.dairy?.upiId && <div style={{ fontSize: '12px', color: 'var(--muted)' }}>UPI: {activeReceipt.dairy.upiId}</div>}
+                <b style={{ fontSize: '18px', color: 'var(--success-foreground)' }}>{activeReceipt.dairy?.businessName}</b>
+                <div style={{ fontSize: '12px', color: 'var(--muted-foreground)' }}>{activeReceipt.dairy?.ownerName} · {activeReceipt.dairy?.phone}</div>
+                {activeReceipt.dairy?.upiId && <div style={{ fontSize: '12px', color: 'var(--muted-foreground)' }}>UPI: {activeReceipt.dairy.upiId}</div>}
               </div>
               <div style={{ textAlign: 'right' }}>
                 <span className="pill success">
                   ✓ {t('payments.verifiedReceipt', 'VERIFIED RECEIPT')}
                 </span>
-                <div style={{ fontSize: '11px', color: 'var(--muted)', marginTop: '4px' }}><code>{activeReceipt.receipt}</code></div>
+                <div style={{ fontSize: '11px', color: 'var(--muted-foreground)', marginTop: '4px' }}><code>{activeReceipt.receipt}</code></div>
               </div>
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', fontSize: '13px', marginBottom: '16px' }}>
               <div>
-                <span style={{ color: 'var(--muted)', display: 'block', fontSize: '11px' }}>{t('common.customer', 'Customer')}</span>
+                <span style={{ color: 'var(--muted-foreground)', display: 'block', fontSize: '11px' }}>{t('common.customer', 'Customer')}</span>
                 <b>{activeReceipt.customer?.name}</b>
               </div>
               <div>
-                <span style={{ color: 'var(--muted)', display: 'block', fontSize: '11px' }}>{t('common.date', 'Payment Date')}</span>
+                <span style={{ color: 'var(--muted-foreground)', display: 'block', fontSize: '11px' }}>{t('common.date', 'Payment Date')}</span>
                 <b>{new Date(activeReceipt.date).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}</b>
               </div>
             </div>
@@ -841,7 +841,7 @@ export function CustomerPayments() {
                 <span style={{ fontSize: '18px', fontWeight: '700', color: 'var(--primary)' }}>{money(activeReceipt.amountPaise)}</span>
               </div>
               {activeReceipt.balanceAfterPaise !== null && (
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '6px', fontSize: '12px', color: 'var(--muted)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '6px', fontSize: '12px', color: 'var(--muted-foreground)' }}>
                   <span>{t('payments.remainingDue', 'Remaining balance due')}:</span>
                   <b>{money(activeReceipt.balanceAfterPaise)}</b>
                 </div>
@@ -849,7 +849,7 @@ export function CustomerPayments() {
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <small style={{ color: 'var(--muted)', fontSize: '11px' }}>
+              <small style={{ color: 'var(--muted-foreground)', fontSize: '11px' }}>
                 {t('payments.receiptFootnote', 'Digital receipt generated by GauAmrut Platform.')}
               </small>
               <button type="button" className="button small" onClick={() => window.print()}>
@@ -1141,7 +1141,7 @@ export function CustomerOrders() {
                     border: '1px solid var(--border)',
                     borderRadius: '10px',
                     padding: '16px 18px',
-                    background: 'var(--surface)'
+                    background: 'var(--card)'
                   }}
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', marginBottom: '10px' }}>
@@ -1200,14 +1200,14 @@ export function CustomerOrders() {
 
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '10px', paddingTop: '8px', borderTop: '1px solid var(--border)' }}>
                     <div>
-                      {ord.notes && <small style={{ color: 'var(--muted)' }}>Note: {ord.notes}</small>}
+                      {ord.notes && <small style={{ color: 'var(--muted-foreground)' }}>Note: {ord.notes}</small>}
                       {ord.status === 'cancelled' && ord.cancellationReason && (
                         <small className="danger-text" style={{ display: 'block' }}>Cancellation: {ord.cancellationReason}</small>
                       )}
                     </div>
                     <div>
-                      <span style={{ fontSize: '11px', color: 'var(--muted)', marginRight: '8px' }}>Total Amount:</span>
-                      <b style={{ fontSize: '15px', color: 'var(--green)' }}>{money(ord.totalPaise)}</b>
+                      <span style={{ fontSize: '11px', color: 'var(--muted-foreground)', marginRight: '8px' }}>Total Amount:</span>
+                      <b style={{ fontSize: '15px', color: 'var(--success-foreground)' }}>{money(ord.totalPaise)}</b>
                     </div>
                   </div>
                 </div>
@@ -1283,7 +1283,7 @@ export function CustomerOrders() {
                     <button
                       type="button"
                       className="icon-button"
-                      style={{ color: 'var(--danger)', minWidth: '32px', minHeight: '32px' }}
+                      style={{ color: 'var(--destructive-soft-foreground)', minWidth: '32px', minHeight: '32px' }}
                       onClick={() => removeItemRow(idx)}
                     >
                       <X size={15} />
@@ -1295,7 +1295,7 @@ export function CustomerOrders() {
 
             <div className="total-strip" style={{ marginBottom: '16px' }}>
               <span>Order Total (Frozen at placement):</span>
-              <b style={{ color: 'var(--green)', fontSize: '15px' }}>{money(liveTotalPaise)}</b>
+              <b style={{ color: 'var(--success-foreground)', fontSize: '15px' }}>{money(liveTotalPaise)}</b>
             </div>
 
             <Field
@@ -1535,7 +1535,7 @@ export function CustomerDisputes() {
                     border: '1px solid var(--border)',
                     borderRadius: '10px',
                     padding: '16px 18px',
-                    background: 'var(--surface)',
+                    background: 'var(--card)',
                     display: 'flex',
                     justifyContent: 'space-between',
                     alignItems: 'center',
@@ -1558,8 +1558,8 @@ export function CustomerDisputes() {
                       </span>
                     </div>
                     <b style={{ fontSize: '14px' }}>{d.title}</b>
-                    <p style={{ fontSize: '12px', color: 'var(--muted)', margin: '4px 0' }}>{d.description}</p>
-                    <small style={{ color: 'var(--muted)' }}>
+                    <p style={{ fontSize: '12px', color: 'var(--muted-foreground)', margin: '4px 0' }}>{d.description}</p>
+                    <small style={{ color: 'var(--muted-foreground)' }}>
                       {new Date(d.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })} · {d.replies?.length || 0} messages
                     </small>
                   </div>
@@ -1656,7 +1656,7 @@ export function CustomerDisputes() {
                 {activeDispute.status?.replace('_', ' ') || ''}
               </span>
             </div>
-            <p style={{ fontSize: '12px', color: 'var(--muted)', margin: '4px 0' }}>{activeDispute.description}</p>
+            <p style={{ fontSize: '12px', color: 'var(--muted-foreground)', margin: '4px 0' }}>{activeDispute.description}</p>
           </div>
 
           <div
@@ -1681,7 +1681,7 @@ export function CustomerDisputes() {
                     maxWidth: '82%'
                   }}
                 >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', marginBottom: '4px', fontSize: '10px', color: 'var(--muted)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', marginBottom: '4px', fontSize: '10px', color: 'var(--muted-foreground)' }}>
                     <b>{isMe ? 'You' : (r.authorName || 'Dairy')} ({r.role})</b>
                     <span>{new Date(r.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                   </div>
@@ -1718,8 +1718,8 @@ export function CustomerDisputes() {
                     padding: '8px 12px',
                     fontFamily: 'inherit',
                     fontSize: '13px',
-                    background: 'var(--surface)',
-                    color: 'var(--ink)'
+                    background: 'var(--card)',
+                    color: 'var(--foreground)'
                   }}
                   placeholder="Type a message to your dairy..."
                   value={replyMessage}
@@ -1749,7 +1749,7 @@ export function CustomerDisputes() {
               </div>
             </form>
           ) : (
-            <div style={{ textAlign: 'center', padding: '10px', color: 'var(--muted)', fontSize: '12px' }}>
+            <div style={{ textAlign: 'center', padding: '10px', color: 'var(--muted-foreground)', fontSize: '12px' }}>
               This dispute is {activeDispute.status}.
             </div>
           )}

@@ -362,7 +362,7 @@ function UsersView({ canManage }) {
                               <button
                                 type="button"
                                 className="text-button"
-                                style={{ color: u.active ? '#a94d34' : 'var(--green)' }}
+                                style={{ color: u.active ? 'var(--destructive-soft-foreground)' : 'var(--success-foreground)' }}
                                 disabled={busy}
                                 onClick={() => toggleActive(u)}
                               >
@@ -542,7 +542,7 @@ function DairiesView({ canManage }) {
                           <button
                             type="button"
                             className="text-button"
-                            style={{ color: d.verified ? '#a94d34' : 'var(--green)' }}
+                            style={{ color: d.verified ? 'var(--destructive-soft-foreground)' : 'var(--success-foreground)' }}
                             disabled={busy}
                             onClick={() => toggleVerify(d)}
                           >
@@ -970,7 +970,7 @@ function WhatsAppCard({ canManage }) {
       )}
       {qr && (
         <div style={{ textAlign: 'center' }}>
-          <img src={qr} alt="WhatsApp linking QR code" style={{ width: 240, height: 240, borderRadius: 12, border: '1px solid var(--border, #e3ebe4)' }}/>
+          <img src={qr} alt="WhatsApp linking QR code" style={{ width: 240, height: 240, borderRadius: 12, border: '1px solid var(--border)' }}/>
           <p className="form-note">Waiting for the phone to scan this code… It refreshes automatically, so scan it as soon as it appears.</p>
         </div>
       )}
@@ -1088,7 +1088,7 @@ function ReportsView() {
       <section className="card" style={{ marginBottom: '18px' }}>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '14px', alignItems: 'flex-end' }}>
           <Field label="Reporting month" type="month" value={month} max={serviceDate().slice(0, 7)} onChange={e => setMonth(e.target.value)} />
-          <p style={{ color: 'var(--muted)', fontSize: '13px', maxWidth: '420px', margin: 0 }}>
+          <p style={{ color: 'var(--muted-foreground)', fontSize: '13px', maxWidth: '420px', margin: 0 }}>
             Applies to deliveries, payments, bills and store orders. The customer directory always covers all registered customers.
           </p>
         </div>

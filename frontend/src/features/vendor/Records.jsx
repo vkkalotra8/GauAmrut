@@ -288,7 +288,7 @@ export default function Records() {
                               </button>
                             </div>
                           ) : (
-                            <small style={{ color: 'var(--muted)' }}>Reviewed</small>
+                            <small style={{ color: 'var(--muted-foreground)' }}>Reviewed</small>
                           )}
                         </td>
                       </tr>

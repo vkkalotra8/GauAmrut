@@ -11,7 +11,8 @@ export function applyTheme(mode) {
   root.dataset.theme = resolved;
   root.style.colorScheme = resolved;
   const meta = document.querySelector('meta[name="theme-color"]');
-  if (meta) meta.setAttribute('content', resolved === 'dark' ? '#0c1512' : '#155c42');
+  // Must match the inline no-flash script in index.html.
+  if (meta) meta.setAttribute('content', resolved === 'dark' ? '#0B1220' : '#F8FAFC');
 }
 
 export function getThemeMode() {

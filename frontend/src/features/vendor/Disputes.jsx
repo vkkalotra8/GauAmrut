@@ -176,7 +176,7 @@ export default function Disputes() {
 
       <div className="filter-bar" style={{ marginBottom: '16px' }}>
         <div className="field" style={{ minWidth: '160px' }}>
-          <label style={{ fontSize: '11px', color: 'var(--muted)', marginBottom: '4px' }}>
+          <label style={{ fontSize: '11px', color: 'var(--muted-foreground)', marginBottom: '4px' }}>
             {t('common.status', 'Status')}
           </label>
           <select
@@ -192,7 +192,7 @@ export default function Disputes() {
         </div>
 
         <div className="field" style={{ minWidth: '160px' }}>
-          <label style={{ fontSize: '11px', color: 'var(--muted)', marginBottom: '4px' }}>
+          <label style={{ fontSize: '11px', color: 'var(--muted-foreground)', marginBottom: '4px' }}>
             {t('disputes.type', 'Issue Category')}
           </label>
           <select
@@ -219,7 +219,7 @@ export default function Disputes() {
                     border: '1px solid var(--border)',
                     borderRadius: '10px',
                     padding: '18px 20px',
-                    background: 'var(--surface)',
+                    background: 'var(--card)',
                     display: 'flex',
                     justifyContent: 'space-between',
                     alignItems: 'center',
@@ -244,11 +244,11 @@ export default function Disputes() {
                     </div>
 
                     <h3 style={{ fontSize: '15px', marginBottom: '4px' }}>{d.title}</h3>
-                    <p style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '8px' }}>
+                    <p style={{ fontSize: '12px', color: 'var(--muted-foreground)', marginBottom: '8px' }}>
                       {d.description}
                     </p>
 
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '11px', color: 'var(--muted)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '11px', color: 'var(--muted-foreground)' }}>
                       <span>From: <b>{d.customerName || 'Customer'}</b></span>
                       {d.customerPhone && <span>· {d.customerPhone}</span>}
                       <span>· {new Date(d.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
@@ -293,7 +293,7 @@ export default function Disputes() {
                 {activeDispute.status?.replace('_', ' ') || ''}
               </span>
             </div>
-            <p style={{ fontSize: '12px', color: 'var(--muted)', margin: '4px 0' }}>
+            <p style={{ fontSize: '12px', color: 'var(--muted-foreground)', margin: '4px 0' }}>
               Customer: <b>{activeDispute.customerName || 'Customer'}</b>
             </p>
           </div>
@@ -321,7 +321,7 @@ export default function Disputes() {
                     maxWidth: '82%'
                   }}
                 >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', marginBottom: '4px', fontSize: '10px', color: 'var(--muted)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', marginBottom: '4px', fontSize: '10px', color: 'var(--muted-foreground)' }}>
                     <b>{r.authorName || (isOwner ? 'Dairy Owner' : 'Customer')} ({r.role})</b>
                     <span>{new Date(r.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                   </div>
@@ -360,8 +360,8 @@ export default function Disputes() {
                     padding: '8px 12px',
                     fontFamily: 'inherit',
                     fontSize: '13px',
-                    background: 'var(--surface)',
-                    color: 'var(--ink)'
+                    background: 'var(--card)',
+                    color: 'var(--foreground)'
                   }}
                   placeholder={t('disputes.replyPlaceholder', 'Type a reply to the customer…')}
                   value={replyMessage}
@@ -391,7 +391,7 @@ export default function Disputes() {
               </div>
             </form>
           ) : (
-            <div style={{ textAlign: 'center', padding: '10px', color: 'var(--muted)', fontSize: '12px' }}>
+            <div style={{ textAlign: 'center', padding: '10px', color: 'var(--muted-foreground)', fontSize: '12px' }}>
               This dispute is closed. No further replies can be sent.
             </div>
           )}

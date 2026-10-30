@@ -11,12 +11,12 @@ const MilkTrendLazy = lazy(async () => {
       <div className="chart-host" role="img" aria-label={`Daily delivery volumes: ${monthly.map(d => `${d._id}: ${d.quantityMl / 1000} litres`).join(', ')}`}>
         <ResponsiveContainer width="100%" height="100%">
           <AreaChart data={points} margin={{ top: 10, right: 10, left: -16, bottom: 0 }}>
-            <defs><linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#0f6b47" stopOpacity={0.3}/><stop offset="100%" stopColor="#0f6b47" stopOpacity={0.02}/></linearGradient></defs>
-            <CartesianGrid strokeDasharray="4 6" vertical={false} stroke="var(--border-soft)"/>
-            <XAxis dataKey="day" tick={{ fontSize: 10, fill: 'var(--muted)' }} axisLine={false} tickLine={false}/>
-            <YAxis tick={{ fontSize: 10, fill: 'var(--muted)' }} axisLine={false} tickLine={false} width={46} tickFormatter={v => `${v} L`}/>
+            <defs><linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="var(--chart-1)" stopOpacity={0.3}/><stop offset="100%" stopColor="var(--chart-1)" stopOpacity={0.02}/></linearGradient></defs>
+            <CartesianGrid strokeDasharray="4 6" vertical={false} stroke="var(--chart-grid)"/>
+            <XAxis dataKey="day" tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }} axisLine={false} tickLine={false}/>
+            <YAxis tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }} axisLine={false} tickLine={false} width={46} tickFormatter={v => `${v} L`}/>
             <Tooltip content={<ChartTip format={(v, key) => (key === 'litres' ? `${v} L` : money(v))}/>} cursor={{ stroke: 'var(--border)', strokeDasharray: '4 4' }}/>
-            <Area type="monotone" dataKey="litres" name="Litres" stroke="var(--green)" strokeWidth={2.5} fill={`url(#${gradientId})`} dot={false} activeDot={{ r: 4, strokeWidth: 0 }} animationDuration={800}/>
+            <Area type="monotone" dataKey="litres" name="Litres" stroke="var(--chart-1)" strokeWidth={2.5} fill={`url(#${gradientId})`} dot={false} activeDot={{ r: 4, strokeWidth: 0 }} animationDuration={800}/>
           </AreaChart>
         </ResponsiveContainer>
       </div>
@@ -37,8 +37,8 @@ const CollectionsDonutLazy = lazy(async () => {
     const outstandingLabel = t('payments.outstandingLegend', 'Outstanding');
     const pct = Math.round((paidPaise / (paidPaise + duePaise)) * 100);
     const segments = [
-      { name: collectedLabel, value: paidPaise, color: '#0f6b47' },
-      { name: outstandingLabel, value: duePaise, color: '#e3b64c' }
+      { name: collectedLabel, value: paidPaise, color: 'var(--chart-1)' },
+      { name: outstandingLabel, value: duePaise, color: 'var(--chart-2)' }
     ];
     return (
       <div className="donut-wrap">

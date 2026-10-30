@@ -137,7 +137,7 @@ export default function Products() {
                         <div style={{ display: 'flex', flexDirection: 'column' }}>
                           <b>{p.name}</b>
                           {p.description && (
-                            <small style={{ color: 'var(--muted)', maxWidth: '300px', whiteSpace: 'normal' }}>
+                            <small style={{ color: 'var(--muted-foreground)', maxWidth: '300px', whiteSpace: 'normal' }}>
                               {p.description}
                             </small>
                           )}
@@ -148,7 +148,7 @@ export default function Products() {
                       </td>
                       <td>{p.unit}</td>
                       <td>
-                        <b style={{ color: 'var(--green)' }}>{money(p.pricePaise)}</b>
+                        <b style={{ color: 'var(--success-foreground)' }}>{money(p.pricePaise)}</b>
                       </td>
                       <td>
                         <button
@@ -267,7 +267,7 @@ export default function Products() {
                 defaultValue={modal !== 'add' ? modal.description : ''}
                 placeholder="Product details, packaging, shelf life..."
                 style={{
-                  border: '1px solid #dfe5d8',
+                  border: '1px solid var(--border)',
                   borderRadius: '6px',
                   padding: '10px 12px',
                   width: '100%',

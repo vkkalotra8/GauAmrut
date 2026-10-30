@@ -640,15 +640,15 @@ export default function Payments() {
                             </span>
                           </td>
                           <td>
-                            <b style={{ color: adj.type === 'debit' || adj.type === 'refund' ? 'var(--danger)' : 'var(--green)' }}>
+                            <b style={{ color: adj.type === 'debit' || adj.type === 'refund' ? 'var(--destructive-soft-foreground)' : 'var(--success-foreground)' }}>
                               {adj.type === 'debit' || adj.type === 'refund' ? '+' : '-'}{money(adj.amountPaise)}
                             </b>
                           </td>
                           <td style={{ maxWidth: '220px' }}>
                             <div>{adj.reason}</div>
-                            {adj.reference && <small style={{ color: 'var(--muted)', display: 'block' }}>Ref: {adj.reference}</small>}
+                            {adj.reference && <small style={{ color: 'var(--muted-foreground)', display: 'block' }}>Ref: {adj.reference}</small>}
                           </td>
-                          <td>{adj.billMonth ? <code>{adj.billMonth}</code> : <span style={{ color: 'var(--muted)' }}>Account</span>}</td>
+                          <td>{adj.billMonth ? <code>{adj.billMonth}</code> : <span style={{ color: 'var(--muted-foreground)' }}>Account</span>}</td>
                           <td>
                             {adj.status === 'reversed' ? (
                               <div>
@@ -872,26 +872,26 @@ export default function Payments() {
             )}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '1px dashed var(--border)', paddingBottom: '14px', marginBottom: '14px' }}>
               <div>
-                <b style={{ fontSize: '18px', color: 'var(--green)' }}>{activeReceipt.dairy?.businessName}</b>
-                <div style={{ fontSize: '12px', color: 'var(--muted)' }}>{activeReceipt.dairy?.ownerName} · {activeReceipt.dairy?.phone}</div>
-                {activeReceipt.dairy?.upiId && <div style={{ fontSize: '12px', color: 'var(--muted)' }}>UPI: {activeReceipt.dairy.upiId}</div>}
+                <b style={{ fontSize: '18px', color: 'var(--success-foreground)' }}>{activeReceipt.dairy?.businessName}</b>
+                <div style={{ fontSize: '12px', color: 'var(--muted-foreground)' }}>{activeReceipt.dairy?.ownerName} · {activeReceipt.dairy?.phone}</div>
+                {activeReceipt.dairy?.upiId && <div style={{ fontSize: '12px', color: 'var(--muted-foreground)' }}>UPI: {activeReceipt.dairy.upiId}</div>}
               </div>
               <div style={{ textAlign: 'right' }}>
                 <span className={`pill ${activeReceipt.reversed ? 'danger' : 'success'}`}>
                   {activeReceipt.reversed ? `✕ ${t('payments.reversedBadge', 'REVERSED')}` : `✓ ${t('payments.verifiedReceipt', 'VERIFIED RECEIPT')}`}
                 </span>
-                <div style={{ fontSize: '11px', color: 'var(--muted)', marginTop: '4px' }}><code>{activeReceipt.receipt}</code></div>
+                <div style={{ fontSize: '11px', color: 'var(--muted-foreground)', marginTop: '4px' }}><code>{activeReceipt.receipt}</code></div>
               </div>
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', fontSize: '13px', marginBottom: '16px' }}>
               <div>
-                <span style={{ color: 'var(--muted)', display: 'block', fontSize: '11px' }}>{t('common.customer', 'Customer')}</span>
+                <span style={{ color: 'var(--muted-foreground)', display: 'block', fontSize: '11px' }}>{t('common.customer', 'Customer')}</span>
                 <b>{activeReceipt.customer?.name}</b>
-                <div style={{ fontSize: '12px', color: 'var(--muted)' }}>{activeReceipt.customer?.phone || 'No phone on file'}</div>
+                <div style={{ fontSize: '12px', color: 'var(--muted-foreground)' }}>{activeReceipt.customer?.phone || 'No phone on file'}</div>
               </div>
               <div>
-                <span style={{ color: 'var(--muted)', display: 'block', fontSize: '11px' }}>{t('common.date', 'Payment Date')}</span>
+                <span style={{ color: 'var(--muted-foreground)', display: 'block', fontSize: '11px' }}>{t('common.date', 'Payment Date')}</span>
                 <b>{new Date(activeReceipt.date).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}</b>
               </div>
             </div>
@@ -915,10 +915,10 @@ export default function Payments() {
               )}
               <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid var(--border)', paddingTop: '8px', marginTop: '6px' }}>
                 <span style={{ fontSize: '15px', fontWeight: '600' }}>{t('common.amount', 'Amount Paid')}:</span>
-                <span style={{ fontSize: '18px', fontWeight: '700', color: 'var(--green)' }}>{money(activeReceipt.amountPaise)}</span>
+                <span style={{ fontSize: '18px', fontWeight: '700', color: 'var(--success-foreground)' }}>{money(activeReceipt.amountPaise)}</span>
               </div>
               {activeReceipt.balanceAfterPaise !== null && (
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '6px', fontSize: '12px', color: 'var(--muted)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '6px', fontSize: '12px', color: 'var(--muted-foreground)' }}>
                   <span>{t('payments.remainingDue', 'Remaining balance due')}:</span>
                   <b>{money(activeReceipt.balanceAfterPaise)}</b>
                 </div>
@@ -926,7 +926,7 @@ export default function Payments() {
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <small style={{ color: 'var(--muted)', fontSize: '11px' }}>
+              <small style={{ color: 'var(--muted-foreground)', fontSize: '11px' }}>
                 {t('payments.receiptFootnote', 'Digital receipt generated by GauAmrut Platform.')}
               </small>
               <button type="button" className="button small" onClick={() => window.print()}>

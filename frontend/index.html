@@ -1,2 +1,19 @@
 <!doctype html>
-<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/><meta name="theme-color" content="#155c42"/><meta name="description" content="GauAmrut — your daily dairy, thoughtfully managed."/><link rel="icon" type="image/svg+xml" href="/icon.svg"/><link rel="manifest" href="/manifest.webmanifest"/><title>GauAmrut | Dairy made simple</title></head><body><div id="root"></div><script type="module" src="/src/main.jsx"></script></body></html>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/><meta name="theme-color" content="#F8FAFC"/><meta name="description" content="GauAmrut — your daily dairy, thoughtfully managed."/><link rel="icon" type="image/svg+xml" href="/icon.svg"/><link rel="manifest" href="/manifest.webmanifest"/><title>GauAmrut | Dairy made simple</title>
+<script>
+/* Paints the chosen theme before first render so a dark-mode visitor never
+   sees a white flash. Mirrors src/theme.js applyTheme(); keep in sync. */
+(function () {
+  try {
+    var mode = localStorage.getItem('gauamrut-theme');
+    var dark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+    var theme = (mode === 'light' || mode === 'dark') ? mode : (dark ? 'dark' : 'light');
+    var root = document.documentElement;
+    root.setAttribute('data-theme', theme);
+    root.style.colorScheme = theme;
+    var meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute('content', theme === 'dark' ? '#0B1220' : '#F8FAFC');
+  } catch (e) { /* storage blocked: fall back to the stylesheet default */ }
+})();
+</script>
+</head><body><div id="root"></div><script type="module" src="/src/main.jsx"></script></body></html>

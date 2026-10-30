@@ -133,7 +133,7 @@ export default function Orders() {
 
       <div className="filter-bar" style={{ marginBottom: '16px' }}>
         <div className="field" style={{ minWidth: '160px' }}>
-          <label style={{ fontSize: '11px', color: 'var(--muted)', marginBottom: '4px' }}>
+          <label style={{ fontSize: '11px', color: 'var(--muted-foreground)', marginBottom: '4px' }}>
             {t('orders.filterStatus', 'Status')}
           </label>
           <select
@@ -149,7 +149,7 @@ export default function Orders() {
         </div>
 
         <div className="field" style={{ minWidth: '160px' }}>
-          <label style={{ fontSize: '11px', color: 'var(--muted)', marginBottom: '4px' }}>
+          <label style={{ fontSize: '11px', color: 'var(--muted-foreground)', marginBottom: '4px' }}>
             {t('orders.deliveryDate', 'Delivery Date')}
           </label>
           <input
@@ -171,7 +171,7 @@ export default function Orders() {
                     border: '1px solid var(--border)',
                     borderRadius: '10px',
                     padding: '18px 20px',
-                    background: 'var(--surface)'
+                    background: 'var(--card)'
                   }}
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '10px', marginBottom: '12px' }}>
@@ -183,7 +183,7 @@ export default function Orders() {
                         <div>
                           <b style={{ fontSize: '14px' }}>{order.customerName || 'Customer'}</b>
                           {order.customerPhone && (
-                            <small style={{ display: 'block', color: 'var(--muted)' }}>
+                            <small style={{ display: 'block', color: 'var(--muted-foreground)' }}>
                               {order.customerPhone}
                             </small>
                           )}
@@ -210,7 +210,7 @@ export default function Orders() {
 
                   {/* Items list */}
                   <div className="table-scroll" style={{ margin: '12px 0' }}>
-                    <table style={{ background: 'var(--canvas)', borderRadius: '6px', overflow: 'hidden' }}>
+                    <table style={{ background: 'var(--background)', borderRadius: '6px', overflow: 'hidden' }}>
                       <thead>
                         <tr>
                           <th>Item</th>
@@ -235,7 +235,7 @@ export default function Orders() {
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', paddingTop: '10px', borderTop: '1px solid var(--border)' }}>
                     <div>
                       {order.notes && (
-                        <p style={{ fontSize: '11px', color: 'var(--muted)', margin: 0 }}>
+                        <p style={{ fontSize: '11px', color: 'var(--muted-foreground)', margin: 0 }}>
                           <b>Note:</b> {order.notes}
                         </p>
                       )}
@@ -248,8 +248,8 @@ export default function Orders() {
 
                     <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
                       <div style={{ textAlign: 'right' }}>
-                        <small style={{ color: 'var(--muted)', display: 'block', fontSize: '10px' }}>Total Amount</small>
-                        <b style={{ fontSize: '16px', color: 'var(--green)' }}>{money(order.totalPaise)}</b>
+                        <small style={{ color: 'var(--muted-foreground)', display: 'block', fontSize: '10px' }}>Total Amount</small>
+                        <b style={{ fontSize: '16px', color: 'var(--success-foreground)' }}>{money(order.totalPaise)}</b>
                       </div>
 
                       {/* Action buttons */}
@@ -384,7 +384,7 @@ export default function Orders() {
                     <button
                       type="button"
                       className="icon-button"
-                      style={{ color: 'var(--danger)', minWidth: '32px', minHeight: '32px' }}
+                      style={{ color: 'var(--destructive-soft-foreground)', minWidth: '32px', minHeight: '32px' }}
                       onClick={() => removeItemRow(idx)}
                     >
                       <X size={15} />
@@ -396,7 +396,7 @@ export default function Orders() {
 
             <div className="total-strip" style={{ marginBottom: '16px' }}>
               <span>Estimated Total:</span>
-              <b style={{ color: 'var(--green)', fontSize: '15px' }}>{money(orderEstimatePaise)}</b>
+              <b style={{ color: 'var(--success-foreground)', fontSize: '15px' }}>{money(orderEstimatePaise)}</b>
             </div>
 
             <Field

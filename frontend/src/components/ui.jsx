@@ -65,5 +65,5 @@ export function Field({ label, ...props }) { return <label className="field"><sp
 export function ChartTip({ active, payload, label, format = String }) {
   if (!active || !payload?.length) return null;
   const first = payload[0];
-  return <div className="chart-tip"><b>{first?.payload?.date || label}</b>{payload.map(p => <span key={p.dataKey}><i style={{ background: p.color || p.stroke || 'var(--green)' }}/>{format(p.value, p.dataKey)}</span>)}</div>;
+  return <div className="chart-tip"><b>{first?.payload?.date || label}</b>{payload.map(p => <span key={p.dataKey}><i style={{ background: p.color || p.stroke || 'var(--chart-1)' }}/>{format(p.value, p.dataKey)}</span>)}</div>;
 }
