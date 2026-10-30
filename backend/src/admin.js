@@ -230,12 +230,19 @@ function adminRoutes() {
   }));
 
   // WhatsApp connection for free OTP and PDF delivery: one linked session per
-  // deployment, started by scanning a QR code from this console.
+  // deployment, started from this console either by scanning a QR code or by
+  // typing the 8-character code WhatsApp offers under "Link with phone number
+  // instead".
   router.get('/whatsapp/status', permit('settings.read'), wrap(async (_req, res) => res.json({ success: true, data: await whatsapp.status() })));
   router.post('/whatsapp/qr', permit('settings.manage'), wrap(async (_req, res) => {
     const qr = await whatsapp.getQr();
     if (!qr) throw new AppError(409, 'WHATSAPP_ALREADY_CONNECTED', 'WhatsApp is already connected.');
     res.json({ success: true, data: { qr } });
+  }));
+  router.post('/whatsapp/pairing-code', permit('settings.manage'), validate(schemas.whatsappPairing), wrap(async (req, res) => {
+    const code = await whatsapp.getPairingCode(req.body.number);
+    if (!code) throw new AppError(409, 'WHATSAPP_ALREADY_CONNECTED', 'WhatsApp is already connected.');
+    res.json({ success: true, data: { code } });
   }));
   router.post('/whatsapp/disconnect', permit('settings.manage'), wrap(async (_req, res) => {
     await whatsapp.disconnect();

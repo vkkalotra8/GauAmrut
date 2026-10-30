@@ -6,8 +6,9 @@
 // again.
 jest.mock('@whiskeysockets/baileys', () => {
   const sockets = [];
-  const DisconnectReason = { loggedOut: 401, connectionClosed: 406, timedOut: 408 };
-  function makeWASocket() {
+  // Mirrors the real enum so close reasons resolve to the names WhatsApp uses.
+  const DisconnectReason = { loggedOut: 401, forbidden: 403, timedOut: 408, connectionClosed: 428, restartRequired: 515 };
+  const makeWASocket = jest.fn(() => {
     const handlers = {};
     const socket = {
       ev: {
@@ -24,13 +25,14 @@ jest.mock('@whiskeysockets/baileys', () => {
           lastDisconnect: { error: Object.assign(new Error('ended'), { output: { statusCode: DisconnectReason.timedOut } }) }
         });
       },
-      sendMessage: jest.fn(async () => ({}))
+      sendMessage: jest.fn(async () => ({})),
+      requestPairingCode: jest.fn(async () => 'ABCDE123')
     };
     sockets.push(socket);
     // Baileys hands the app a pairing code as soon as the socket is up.
     Promise.resolve().then(() => socket.ev.emit('connection.update', { qr: `QR${sockets.length}` }));
     return socket;
-  }
+  });
   return {
     __esModule: true,
     default: makeWASocket,
@@ -40,13 +42,18 @@ jest.mock('@whiskeysockets/baileys', () => {
     useMultiFileAuthState: jest.fn(async () => ({ state: { creds: {}, keys: {} }, saveCreds: jest.fn() })),
     makeCacheableSignalKeyStore: jest.fn(keys => keys),
     jidNormalizedUser: jest.fn(jid => jid.split('@')[0]),
-    fetchLatestBaileysVersion: jest.fn(async () => ({ version: [2, 3000, 1041] }))
+    // The live revision is what the real web client is running; the pinned one
+    // is only a fallback when whatsapp.com is unreachable.
+    fetchLatestWaWebVersion: jest.fn(async () => ({ version: [2, 3000, 1052319678], isLatest: true })),
+    fetchLatestBaileysVersion: jest.fn(async () => ({ version: [2, 3000, 1043857760], isLatest: false }))
   };
 });
 jest.mock('qrcode', () => ({ toDataURL: jest.fn(async value => `data:image/png;base64,${value}`) }));
 jest.mock('pino', () => jest.fn(() => ({ level: 'silent' })));
+// clearAuth() wipes the real session directory; nothing here may touch it.
+jest.mock('fs', () => ({ rmSync: jest.fn() }));
 
-describe('WhatsApp pairing code', () => {
+describe('WhatsApp device linking', () => {
   let baileys, whatsapp;
 
   beforeEach(() => {
@@ -58,8 +65,17 @@ describe('WhatsApp pairing code', () => {
   test('serves the code the socket just issued', async () => {
     const qr = await whatsapp.getQr();
     expect(qr).toBe('data:image/png;base64,QR1');
-    expect(await whatsapp.status()).toEqual({ connected: false, phone: null, qr });
+    expect(await whatsapp.status()).toEqual({ connected: false, phone: null, qr, pairingCode: null, lastError: null });
     expect(baileys.sockets).toHaveLength(1);
+  });
+
+  test('speaks the revision of WhatsApp Web the real client is running', async () => {
+    await whatsapp.getQr();
+    // Not the revision Baileys pinned at release time — that drifts behind
+    // within weeks and WhatsApp rejects stale clients at link registration.
+    const [config] = baileys.makeWASocket.mock.calls[0];
+    expect(config.version).toEqual([2, 3000, 1052319678]);
+    expect(baileys.fetchLatestBaileysVersion).not.toHaveBeenCalled();
   });
 
   test('replaces a code past its validity instead of handing it back', async () => {
@@ -73,7 +89,7 @@ describe('WhatsApp pairing code', () => {
       expect(second).toBe('data:image/png;base64,QR2');
       expect(second).not.toBe(first);
       expect(baileys.sockets).toHaveLength(2);
-      expect(await whatsapp.status()).toEqual({ connected: false, phone: null, qr: second });
+      expect(await whatsapp.status()).toEqual({ connected: false, phone: null, qr: second, pairingCode: null, lastError: null });
 
       // A code that is still young is reused rather than churned.
       const third = await whatsapp.getQr();
@@ -84,11 +100,34 @@ describe('WhatsApp pairing code', () => {
     }
   });
 
+  test('links by typed code too, asking WhatsApp only once', async () => {
+    const code = await whatsapp.getPairingCode('+91 98765 43210');
+    expect(code).toBe('ABCDE123');
+    expect(baileys.sockets[0].requestPairingCode).toHaveBeenCalledWith('919876543210');
+    expect((await whatsapp.status()).pairingCode).toBe('ABCDE123');
+
+    // A second request on the same socket makes WhatsApp reject the link.
+    expect(await whatsapp.getPairingCode('9876543210')).toBe('ABCDE123');
+    expect(baileys.sockets[0].requestPairingCode).toHaveBeenCalledTimes(1);
+  });
+
+  test('reports why WhatsApp closed a link attempt', async () => {
+    await whatsapp.getQr();
+    baileys.sockets[0].ev.emit('connection.update', {
+      connection: 'close',
+      lastDisconnect: { error: Object.assign(new Error('link refused'), { output: { statusCode: 401 } }) }
+    });
+
+    const { lastError } = await whatsapp.status();
+    expect(lastError).toMatchObject({ code: 401, name: 'loggedOut' });
+    expect(lastError.hint).toMatch(/rejected the link/i);
+  });
+
   test('reports no pairing code once the session is linked', async () => {
     await whatsapp.getQr();
     baileys.sockets[0].ev.emit('connection.update', { connection: 'open' });
 
-    expect(await whatsapp.status()).toEqual({ connected: true, phone: '919876543210:1', qr: null });
+    expect(await whatsapp.status()).toEqual({ connected: true, phone: '919876543210:1', qr: null, pairingCode: null, lastError: null });
     expect(await whatsapp.getQr()).toBeNull();
   });
 
@@ -98,7 +137,7 @@ describe('WhatsApp pairing code', () => {
     await expect(whatsapp.sendText('9876543210', 'hi')).rejects.toMatchObject({
       status: 503,
       code: 'WHATSAPP_UNAVAILABLE',
-      message: expect.stringContaining('scan the QR code')
+      message: expect.stringContaining('link the device')
     });
   });
 });

@@ -1,7 +1,8 @@
 // One shared WhatsApp session for the deployment (linked once from the admin
-// console by scanning a QR code). Once linked, OTPs and PDF documents are sent
-// over the linked device session — WhatsApp messages cost nothing. The auth
-// state persists in backend/.wa-auth so restarts stay logged in.
+// console by scanning a QR code or entering a pairing code). Once linked, OTPs
+// and PDF documents are sent over the linked device session — WhatsApp messages
+// cost nothing. The auth state persists in backend/.wa-auth so restarts stay
+// logged in.
 const fs = require('fs');
 const path = require('path');
 const { AppError } = require('./domain');
@@ -11,18 +12,28 @@ let connecting = false;
 let connected = false;
 let qrDataUrl = null;
 let qrGeneratedAt = null;
+let pairingCode = null;
+let pairingRequestedAt = 0;
+let pairingSocket = null;
 let waPhone = null;
 let shuttingDown = false;
+let lastError = null;
+let versionCache = { at: 0, version: null, source: 'bundled' };
 
 // WhatsApp only honours a pairing code for a short window (Baileys rotates the
 // first one after 60s and every 20s after that). A code older than this is
 // replaced rather than re-served — the phone rejects an expired or already
 // consumed one with "Couldn't link device".
 const QR_MAX_AGE_MS = 15000;
+// How long a typed pairing code stays usable before we ask for a fresh socket.
+const PAIRING_CODE_TTL_MS = 60000;
+// The live revision lives on whatsapp.com; only fall back when that is slow.
+const VERSION_TTL_MS = 30 * 60000;
+const VERSION_TIMEOUT_MS = 6000;
 
 const authDir = () => path.join(__dirname, '..', '.wa-auth');
 
-const unavailable = () => new AppError(503, 'WHATSAPP_UNAVAILABLE', 'WhatsApp is not connected yet. Ask your administrator to scan the QR code in the admin console (Settings → WhatsApp connection) and retry.');
+const unavailable = () => new AppError(503, 'WHATSAPP_UNAVAILABLE', 'WhatsApp is not connected yet. Ask your administrator to link the device in the admin console (Settings → WhatsApp connection) and retry.');
 
 function normalizeNumber(raw) {
   let n = String(raw || '').replace(/\D/g, '');
@@ -37,23 +48,71 @@ function clearAuth() { fs.rmSync(authDir(), { recursive: true, force: true }); }
 
 // A pairing code belongs to the socket that issued it; once that socket is gone
 // the code is dead and must not be handed out again.
-function clearQr() { qrDataUrl = null; qrGeneratedAt = null; }
+function clearPairing() {
+  qrDataUrl = null;
+  qrGeneratedAt = null;
+  pairingCode = null;
+}
+
+function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
+
+// WhatsApp names each close reason; surfacing it is the difference between
+// "it didn't work" and "the account refuses unofficial clients".
+function reasonName(code, DisconnectReason) {
+  const hit = Object.entries(DisconnectReason).find(([, value]) => typeof value === 'number' && value === code);
+  return hit ? hit[0] : 'unknown';
+}
+
+function explainClose(code) {
+  switch (code) {
+    case 515: return 'WhatsApp finished the link and asked the client to reconnect — this is normal and is handled automatically.';
+    case 401: return 'WhatsApp rejected the link. The session was revoked, or this account only accepts the official WhatsApp client.';
+    case 403: return 'WhatsApp refused this client outright.';
+    case 408: return 'The link attempt timed out before the phone confirmed it.';
+    case 411: return 'The account is already signed in to a different multi-device session.';
+    case 440: return 'Another client took over this connection.';
+    case 500: return 'The stored session is no longer valid.';
+    case 503: return 'WhatsApp reported the service as unavailable.';
+    default: return 'The connection to WhatsApp dropped.';
+  }
+}
+
+// The revision of WhatsApp Web we pretend to be. WhatsApp rejects link
+// registration from clients speaking an old build, and the revision Baileys
+// pins at release time drifts behind within weeks — so read the one the real
+// web client is running right now and only fall back when that is unreachable.
+async function resolveVersion() {
+  if (Date.now() - versionCache.at < VERSION_TTL_MS) return versionCache;
+  const entry = { at: Date.now(), version: null, source: 'bundled' };
+  const { fetchLatestWaWebVersion, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
+  try {
+    const live = await fetchLatestWaWebVersion({ timeout: VERSION_TIMEOUT_MS });
+    if (live?.isLatest && Array.isArray(live.version)) {
+      entry.version = live.version;
+      entry.source = 'whatsapp.com';
+    }
+  } catch { /* no outbound access — keep the bundled revision */ }
+  if (!entry.version) {
+    try {
+      const pinned = await fetchLatestBaileysVersion();
+      if (Array.isArray(pinned?.version)) { entry.version = pinned.version; entry.source = 'baileys-pinned'; }
+    } catch { /* keep the bundled revision */ }
+  }
+  versionCache = entry;
+  return entry;
+}
 
 async function connect() {
   if (sock || connecting) return;
   connecting = true;
   try {
-    const { default: makeWASocket, useMultiFileAuthState, makeCacheableSignalKeyStore, DisconnectReason, jidNormalizedUser, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
+    const { default: makeWASocket, useMultiFileAuthState, makeCacheableSignalKeyStore, DisconnectReason, jidNormalizedUser } = require('@whiskeysockets/baileys');
     const QRCode = require('qrcode');
     const pino = require('pino');
     const logger = pino({ level: 'silent' });
     const { state, saveCreds } = await useMultiFileAuthState(authDir());
-    let version;
-    try { ({ version } = await fetchLatestBaileysVersion()); } catch { /* use Baileys' bundled WhatsApp version */ }
-    // Logged so a rejected pairing can be traced to a stale client version —
-    // WhatsApp answers "Try again later" when the phone and the socket
-    // disagree about which build of the protocol they are speaking.
-    console.error(JSON.stringify({ event: 'whatsapp_connecting', version: Array.isArray(version) ? version.join('.') : 'bundled' }));
+    const { version, source } = await resolveVersion();
+    console.error(JSON.stringify({ event: 'whatsapp_connecting', waVersion: version ? version.join('.') : 'bundled', revisionSource: source }));
     const socket = makeWASocket({
       auth: { creds: state.creds, keys: makeCacheableSignalKeyStore(state.keys, logger) },
       ...(version ? { version } : {}),
@@ -77,21 +136,28 @@ async function connect() {
       }
       if (connection === 'open') {
         connected = true;
-        clearQr();
+        clearPairing();
+        lastError = null;
         try { waPhone = jidNormalizedUser(socket.user.id).split('@')[0]; } catch { waPhone = null; }
         console.error(JSON.stringify({ event: 'whatsapp_connected', phone: waPhone }));
       }
       if (connection === 'close') {
         connected = false;
         sock = null;
-        clearQr();
+        clearPairing();
         const code = lastDisconnect?.error?.output?.statusCode;
+        const name = reasonName(code, DisconnectReason);
+        const message = lastDisconnect?.error?.message;
+        lastError = { code: code ?? null, name, message: message || null, hint: explainClose(code), at: new Date().toISOString() };
+        console.error(JSON.stringify({ event: 'whatsapp_closed', code: code ?? null, name, message: message || null }));
         if (code === DisconnectReason.loggedOut) {
           waPhone = null;
           clearAuth();
           console.error(JSON.stringify({ event: 'whatsapp_logged_out' }));
         } else if (!shuttingDown) {
-          setTimeout(() => connect().catch(() => {}), 3000);
+          // 515 is WhatsApp telling a freshly paired client to reconnect with
+          // its new credentials; waiting risks the phone invalidating the link.
+          setTimeout(() => connect().catch(() => {}), code === DisconnectReason.restartRequired ? 0 : 3000);
         }
       }
     });
@@ -102,7 +168,7 @@ async function connect() {
 }
 
 async function status() {
-  return { connected, phone: waPhone, qr: qrDataUrl };
+  return { connected, phone: waPhone, qr: qrDataUrl, pairingCode, lastError };
 }
 
 // Drops the live socket (leaving the saved session untouched) so Baileys asks
@@ -112,9 +178,9 @@ async function restartForQr() {
   sock = null;
   connecting = false;
   connected = false;
-  clearQr();
+  clearPairing();
   if (old) { try { old.end(); } catch { /* socket already gone */ } }
-  await new Promise(resolve => setTimeout(resolve, 300));
+  await sleep(300);
 }
 
 // Starts the connection if needed and returns a code the phone can actually
@@ -125,8 +191,39 @@ async function getQr() {
   if (connected) return null;
   if (qrDataUrl && Date.now() - qrGeneratedAt > QR_MAX_AGE_MS) await restartForQr();
   await connect();
-  for (let i = 0; i < 40 && !connected && !qrDataUrl; i++) await new Promise(resolve => setTimeout(resolve, 250));
+  for (let i = 0; i < 40 && !connected && !qrDataUrl; i++) await sleep(250);
   return qrDataUrl;
+}
+
+// The same linking, without a camera: WhatsApp → Linked devices → Link a
+// device → "Link with phone number instead". Some accounts pair more reliably
+// this way, and it removes scanning a screen from the picture entirely.
+async function getPairingCode(number) {
+  const digits = normalizeNumber(number);
+  if (connected) return null;
+  // WhatsApp answers a second request on the same socket with "Couldn't link
+  // device", so reuse a live code and otherwise start a clean socket.
+  if (pairingCode && Date.now() - pairingRequestedAt < PAIRING_CODE_TTL_MS) return pairingCode;
+  if (pairingSocket && pairingSocket === sock) await restartForQr();
+  await connect();
+  // The code can only be asked for once the socket is on the wire; the first
+  // pairing payload is the signal that it is.
+  for (let i = 0; i < 40 && !connected && !qrDataUrl; i++) await sleep(250);
+  if (connected || !sock) {
+    if (connected) return null;
+    throw new AppError(503, 'WHATSAPP_UNAVAILABLE', 'WhatsApp could not reach its servers. Check this machine can reach web.whatsapp.com and retry.');
+  }
+  try {
+    const raw = await sock.requestPairingCode(digits);
+    pairingCode = String(raw || '').trim();
+    pairingRequestedAt = Date.now();
+    pairingSocket = sock;
+    console.error(JSON.stringify({ event: 'whatsapp_pairing_code_issued' }));
+    return pairingCode;
+  } catch (error) {
+    console.error(JSON.stringify({ event: 'whatsapp_pairing_code_failed', error: error.message }));
+    throw new AppError(502, 'WHATSAPP_PAIRING_FAILED', 'WhatsApp did not issue a pairing code. Wait a moment and try again.');
+  }
 }
 
 function ensureReady() {
@@ -159,9 +256,9 @@ async function disconnect() {
   try { if (sock) await sock.logout(); } catch { /* session already gone */ }
   sock = null;
   connected = false;
-  clearQr();
+  clearPairing();
   waPhone = null;
   clearAuth();
 }
 
-module.exports = { status, getQr, sendText, sendDocument, disconnect, normalizeNumber };
+module.exports = { status, getQr, getPairingCode, sendText, sendDocument, disconnect, normalizeNumber };

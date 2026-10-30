@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSelector } from 'react-redux';
 import { Navigate, NavLink, Route, Routes, useLocation } from 'react-router-dom';
-import { BarChart3, Cpu, Download, Leaf, LayoutDashboard, LogOut, Mail, Megaphone, Menu, MoreHorizontal, QrCode, Receipt, Scale, ScrollText, Send, Settings as SettingsIcon, ShieldCheck, Store, UserPlus, Users, Wifi, WifiOff } from 'lucide-react';
+import { BarChart3, Cpu, Download, Hash, Leaf, LayoutDashboard, LogOut, Mail, Megaphone, Menu, MoreHorizontal, QrCode, Receipt, Scale, ScrollText, Send, Settings as SettingsIcon, ShieldCheck, Store, UserPlus, Users, Wifi, WifiOff } from 'lucide-react';
 import { Brand, Empty, Field, Heading, Modal, Notice, State } from '../../components/ui';
 import useData from '../../hooks/useData';
 import { api, message, serviceDate } from '../../lib';
@@ -839,6 +839,7 @@ function SettingCard({ section, doc, canManage, onSaved }) {
 
 function WhatsAppCard({ canManage }) {
   const [status, setStatus] = useState(null), [busy, setBusy] = useState(''), [error, setError] = useState(''), [qr, setQr] = useState('');
+  const [method, setMethod] = useState('qr'), [pairNumber, setPairNumber] = useState(''), [pairingCode, setPairingCode] = useState('');
   const qrRef = useRef('');
   const watchRef = useRef(null);
   useEffect(() => { qrRef.current = qr; }, [qr]);
@@ -856,10 +857,10 @@ function WhatsAppCard({ canManage }) {
     return () => clearInterval(watchRef.current);
   }, []);
 
-  // Baileys rotates the pairing code roughly every 20 seconds while nobody has
-  // scanned it, and a code that has already expired is rejected by the phone
-  // with "Couldn't link device". Keep the image in step with the server so the
-  // code on screen is always the one that is currently valid.
+  // Baileys rotates the QR roughly every 20 seconds while nobody has scanned
+  // it, and a code that has already expired is rejected by the phone with
+  // "Couldn't link device". Keep the image in step with the server so the code
+  // on screen is always the one that is currently valid.
   function watchConnection() {
     clearInterval(watchRef.current);
     let withoutCode = 0;
@@ -868,7 +869,8 @@ function WhatsAppCard({ canManage }) {
         const { data } = await api.get('/admin/whatsapp/status');
         const next = data.data;
         setStatus(next);
-        if (next.connected) { setQr(''); clearInterval(watchRef.current); return; }
+        if (next.connected) { setQr(''); setPairingCode(''); clearInterval(watchRef.current); return; }
+        setPairingCode(next.pairingCode || '');
         if (next.qr) {
           withoutCode = 0;
           if (next.qr !== qrRef.current) setQr(next.qr);
@@ -897,6 +899,24 @@ function WhatsAppCard({ canManage }) {
     }
   }
 
+  // The same link without a camera. WhatsApp offers "Link with phone number
+  // instead" on the Linked devices screen; some accounts pair more reliably
+  // this way than by scanning a screen.
+  async function requestCode(e) {
+    e.preventDefault();
+    setBusy('pair');
+    setError('');
+    try {
+      const { data } = await api.post('/admin/whatsapp/pairing-code', { number: pairNumber });
+      setPairingCode(data.data.code);
+      watchConnection();
+    } catch (err) {
+      setError(message(err));
+    } finally {
+      setBusy('');
+    }
+  }
+
   async function disconnect() {
     setBusy('disconnect');
     setError('');
@@ -904,6 +924,7 @@ function WhatsAppCard({ canManage }) {
     try {
       await api.post('/admin/whatsapp/disconnect');
       setQr('');
+      setPairingCode('');
       await loadStatus();
     } catch (err) {
       setError(message(err));
@@ -912,22 +933,29 @@ function WhatsAppCard({ canManage }) {
     }
   }
 
+  const lastError = status?.lastError;
+
   return (
     <section className="card">
       <div className="card-heading">
         <div>
           <h2>WhatsApp connection</h2>
-          <p className="form-note">Link a WhatsApp account once and verification codes and PDF documents go to customer numbers at no cost. On the phone: WhatsApp → Linked devices → Link a device, then scan the code below.</p>
+          <p className="form-note">Link a WhatsApp account once and verification codes and PDF documents go to customer numbers at no cost. Either scan a code from the phone, or have the phone type in a code — both live under WhatsApp → Linked devices → Link a device.</p>
         </div>
       </div>
       <Notice error>{error}</Notice>
       {status ? (
-        <div className="detail-grid" style={{ marginBottom: qr ? '12px' : 0 }}>
+        <div className="detail-grid" style={{ marginBottom: qr || pairingCode ? '12px' : 0 }}>
           <div><small>Status</small><span className={`status ${status.connected ? '' : 'neutral'}`}>{status.connected ? 'Connected' : 'Not connected'}</span></div>
           {status.connected && status.phone && <div><small>Linked number</small><b>+{status.phone}</b></div>}
         </div>
       ) : (
         <p className="form-note">Loading connection status…</p>
+      )}
+      {!status?.connected && lastError && (
+        <Notice>
+          Last attempt was closed by WhatsApp ({lastError.name}{lastError.code ? ` ${lastError.code}` : ''}). {lastError.hint}
+        </Notice>
       )}
       {qr && (
         <div style={{ textAlign: 'center' }}>
@@ -935,18 +963,41 @@ function WhatsAppCard({ canManage }) {
           <p className="form-note">Waiting for the phone to scan this code… It refreshes automatically, so scan it as soon as it appears.</p>
         </div>
       )}
-      {canManage && (
-        <div className="heading-actions">
-          {!status?.connected && (
-            <button type="button" className="button primary" disabled={Boolean(busy)} onClick={showQr}>
+      {pairingCode && (
+        <div style={{ textAlign: 'center' }}>
+          <p style={{ fontSize: 30, fontWeight: 700, letterSpacing: '0.18em', fontFamily: 'var(--font-mono, monospace)', margin: '4px 0' }}>
+            {pairingCode.slice(0, 4)}-{pairingCode.slice(4)}
+          </p>
+          <p className="form-note">On the phone: WhatsApp → Linked devices → Link a device → <b>Link with phone number instead</b>, then enter this code.</p>
+        </div>
+      )}
+      {canManage && !status?.connected && (
+        <form className="heading-actions" style={{ flexWrap: 'wrap' }} onSubmit={method === 'code' ? requestCode : e => { e.preventDefault(); showQr(); }}>
+          <button type="button" className={`button ${method === 'qr' ? '' : 'ghost'}`} onClick={() => setMethod('qr')}>
+            <QrCode size={16}/> Scan a code
+          </button>
+          <button type="button" className={`button ${method === 'code' ? '' : 'ghost'}`} onClick={() => setMethod('code')}>
+            <Hash size={16}/> Type a code
+          </button>
+          {method === 'qr' ? (
+            <button type="submit" className="button primary" disabled={Boolean(busy)}>
               <QrCode size={16}/> {busy === 'qr' ? 'Preparing code…' : qr ? 'Refresh QR code' : 'Show QR code'}
             </button>
+          ) : (
+            <>
+              <input type="tel" name="number" placeholder="+91 98765 43210" value={pairNumber} onChange={e => setPairNumber(e.target.value)} required style={{ maxWidth: 190 }} />
+              <button type="submit" className="button primary" disabled={Boolean(busy) || !pairNumber.trim()}>
+                {busy === 'pair' ? 'Requesting…' : pairingCode ? 'Get a new code' : 'Get code'}
+              </button>
+            </>
           )}
-          {status?.connected && (
-            <button type="button" className="button" disabled={Boolean(busy)} onClick={disconnect}>
-              {busy === 'disconnect' ? 'Disconnecting…' : 'Disconnect'}
-            </button>
-          )}
+        </form>
+      )}
+      {canManage && status?.connected && (
+        <div className="heading-actions">
+          <button type="button" className="button" disabled={Boolean(busy)} onClick={disconnect}>
+            {busy === 'disconnect' ? 'Disconnecting…' : 'Disconnect'}
+          </button>
         </div>
       )}
     </section>

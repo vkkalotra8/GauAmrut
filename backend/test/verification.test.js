@@ -6,8 +6,9 @@ process.env.DEV_SHOW_OTP = 'true';
 process.env.JWT_SECRET = '12345678901234567890123456789012';
 
 jest.mock('../src/whatsapp', () => ({
-  status: jest.fn(async () => ({ connected: false, phone: null, qr: null })),
+  status: jest.fn(async () => ({ connected: false, phone: null, qr: null, pairingCode: null, lastError: null })),
   getQr: jest.fn(async () => 'data:image/png;base64,QRDATA'),
+  getPairingCode: jest.fn(async () => 'ABCDE123'),
   sendText: jest.fn(async () => {}),
   sendDocument: jest.fn(async () => {}),
   disconnect: jest.fn(async () => {}),
@@ -274,7 +275,7 @@ describe('WhatsApp document sharing and admin connection', () => {
   test('admins can manage the WhatsApp connection', async () => {
     const status = await request(app).get('/api/admin/whatsapp/status').set('Authorization', `Bearer ${superAdminToken}`);
     expect(status.status).toBe(200);
-    expect(status.body.data).toEqual({ connected: false, phone: null, qr: null });
+    expect(status.body.data).toEqual({ connected: false, phone: null, qr: null, pairingCode: null, lastError: null });
 
     const qr = await request(app).post('/api/admin/whatsapp/qr').set('Authorization', `Bearer ${superAdminToken}`);
     expect(qr.status).toBe(200);
@@ -283,6 +284,20 @@ describe('WhatsApp document sharing and admin connection', () => {
     whatsapp.getQr.mockResolvedValueOnce(null);
     const connected = await request(app).post('/api/admin/whatsapp/qr').set('Authorization', `Bearer ${superAdminToken}`);
     expect(connected.status).toBe(409);
+
+    // The same link without a camera: the phone types the code WhatsApp shows
+    // under "Link with phone number instead".
+    const typed = await request(app).post('/api/admin/whatsapp/pairing-code')
+      .set('Authorization', `Bearer ${superAdminToken}`)
+      .send({ number: '+91 98765 43210' });
+    expect(typed.status).toBe(200);
+    expect(typed.body.data.code).toBe('ABCDE123');
+    expect(whatsapp.getPairingCode).toHaveBeenCalledWith('+91 98765 43210');
+
+    const badNumber = await request(app).post('/api/admin/whatsapp/pairing-code')
+      .set('Authorization', `Bearer ${superAdminToken}`)
+      .send({ number: 'not a number' });
+    expect(badNumber.status).toBe(400);
 
     const off = await request(app).post('/api/admin/whatsapp/disconnect').set('Authorization', `Bearer ${superAdminToken}`);
     expect(off.status).toBe(200);
