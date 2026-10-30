@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSelector } from 'react-redux';
 import { Navigate, NavLink, Route, Routes, useLocation } from 'react-router-dom';
-import { BarChart3, Cpu, Download, Hash, Leaf, LayoutDashboard, LogOut, Mail, Megaphone, Menu, MoreHorizontal, QrCode, Receipt, Scale, ScrollText, Send, Settings as SettingsIcon, ShieldCheck, Store, UserPlus, Users, Wifi, WifiOff } from 'lucide-react';
+import { BarChart3, Cpu, Download, Hash, Leaf, LayoutDashboard, LogOut, Mail, Megaphone, Menu, MoreHorizontal, QrCode, Receipt, Scale, ScrollText, Send, Settings as SettingsIcon, ShieldCheck, ShoppingBag, Store, UserPlus, Users, Wallet, Wifi, WifiOff } from 'lucide-react';
 import { Brand, Empty, Field, Heading, Modal, Notice, State } from '../../components/ui';
 import useData from '../../hooks/useData';
 import { api, message, serviceDate } from '../../lib';
@@ -1012,12 +1012,14 @@ function ReportsView() {
   // Platform-wide exports spanning every dairy. Deliveries, payments, bills and
   // orders are month-scoped; the customer directory is all-time with till-date
   // balances, mirroring the dairy-facing reports but across all tenants.
+  // The same lucide glyphs the dairy-facing reports use, so the platform cards
+  // read as one family rather than a row of emoji.
   const reports = useMemo(() => [
-    { id: 'deliveries', label: 'Deliveries', description: 'Every milk delivery across all dairies for the month, with dairy, customer, quantity, rate and charge.', monthScoped: true, icon: '🥛' },
-    { id: 'payments', label: 'Payments', description: 'All customer payments recorded across all dairies for the month, with mode, reference and amount.', monthScoped: true, icon: '💳' },
-    { id: 'bills', label: 'Bills', description: 'Monthly bills raised across all dairies, with opening, charges, paid and closing balances.', monthScoped: true, icon: '🧾' },
-    { id: 'orders', label: 'Store orders', description: 'Product orders placed across all dairies for the month, with items, status and order value.', monthScoped: true, icon: '🛒' },
-    { id: 'customers', label: 'Customer directory', description: 'Every registered customer across all dairies, with rates and till-date outstanding balances.', monthScoped: false, icon: '👥' }
+    { id: 'deliveries', label: 'Deliveries', description: 'Every milk delivery across all dairies for the month, with dairy, customer, quantity, rate and charge.', monthScoped: true, icon: BarChart3 },
+    { id: 'payments', label: 'Payments', description: 'All customer payments recorded across all dairies for the month, with mode, reference and amount.', monthScoped: true, icon: Wallet },
+    { id: 'bills', label: 'Bills', description: 'Monthly bills raised across all dairies, with opening, charges, paid and closing balances.', monthScoped: true, icon: Receipt },
+    { id: 'orders', label: 'Store orders', description: 'Product orders placed across all dairies for the month, with items, status and order value.', monthScoped: true, icon: ShoppingBag },
+    { id: 'customers', label: 'Customer directory', description: 'Every registered customer across all dairies, with rates and till-date outstanding balances.', monthScoped: false, icon: Users }
   ], []);
 
   function endpointFor(report, format) {
@@ -1067,34 +1069,37 @@ function ReportsView() {
       </section>
 
       <div className="reports-grid">
-        {reports.map(report => (
-          <section key={report.id} className="card report-card">
-            <span className="report-icon">{report.icon}</span>
-            <h2>{report.label}</h2>
-            <p>{report.description}</p>
-            {report.monthScoped && (
-              <div className="report-note"><small>Reporting month: {month}</small></div>
-            )}
-            <div className="heading-actions">
-              <button
-                type="button"
-                className="button primary"
-                disabled={Boolean(busy) || (report.monthScoped && !month)}
-                onClick={() => handleDownload(report, 'csv')}
-              >
-                <Download size={17} />{busy === `${report.id}-csv` ? 'Preparing…' : 'Download CSV'}
-              </button>
-              <button
-                type="button"
-                className="button"
-                disabled={Boolean(busy) || (report.monthScoped && !month)}
-                onClick={() => handleDownload(report, 'pdf')}
-              >
-                <Download size={17} />{busy === `${report.id}-pdf` ? 'Preparing…' : 'Download PDF'}
-              </button>
-            </div>
-          </section>
-        ))}
+        {reports.map(report => {
+          const Icon = report.icon;
+          return (
+            <section key={report.id} className="card report-card">
+              <span className="report-icon"><Icon size={32}/></span>
+              <h2>{report.label}</h2>
+              <p>{report.description}</p>
+              {report.monthScoped && (
+                <div className="report-note"><small>Reporting month: {month}</small></div>
+              )}
+              <div className="heading-actions">
+                <button
+                  type="button"
+                  className="button primary"
+                  disabled={Boolean(busy) || (report.monthScoped && !month)}
+                  onClick={() => handleDownload(report, 'csv')}
+                >
+                  <Download size={17} />{busy === `${report.id}-csv` ? 'Preparing…' : 'Download CSV'}
+                </button>
+                <button
+                  type="button"
+                  className="button"
+                  disabled={Boolean(busy) || (report.monthScoped && !month)}
+                  onClick={() => handleDownload(report, 'pdf')}
+                >
+                  <Download size={17} />{busy === `${report.id}-pdf` ? 'Preparing…' : 'Download PDF'}
+                </button>
+              </div>
+            </section>
+          );
+        })}
       </div>
     </>
   );
