@@ -10,6 +10,7 @@ import LanguageSelect from '../../components/LanguageSelect';
 import ThemeToggle from '../../components/ThemeToggle';
 import AnnouncementBanner from '../../components/AnnouncementBanner';
 import ShareToWhatsAppModal from '../../components/ShareToWhatsApp';
+import ShareReportButton from '../../components/ShareReportButton';
 import { invalidatePlatformSettings } from '../../platform';
 
 const sections = [
@@ -493,8 +494,18 @@ function DairiesView({ canManage }) {
         <button type="button" className="button" disabled={Boolean(exportBusy)} onClick={downloadDirectoryPdf}>
           Download PDF
         </button>
+        <ShareReportButton
+          fetchReport={fetchDirectoryPdf}
+          shareText="GauAmrut dairy directory"
+          className="button"
+          iconSize={16}
+          busyLabel="Preparing PDF…"
+          disabled={Boolean(exportBusy)}
+          onNotice={setNotice}
+          onError={setError}
+        />
         <button type="button" className="button" disabled={Boolean(exportBusy)} onClick={shareDirectoryPdf}>
-          <Send size={16}/> {exportBusy === 'share' ? 'Preparing PDF…' : 'Share to WhatsApp'}
+          <Send size={16}/> {exportBusy === 'share' ? 'Preparing PDF…' : 'Send to a number'}
         </button>
       </Heading>
       <Notice>{notice}</Notice>
@@ -1008,6 +1019,7 @@ function ReportsView() {
   const [month, setMonth] = useState(serviceDate().slice(0, 7));
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
 
   // Platform-wide exports spanning every dairy. Deliveries, payments, bills and
   // orders are month-scoped; the customer directory is all-time with till-date
@@ -1026,6 +1038,19 @@ function ReportsView() {
     return `/admin/reports/${report.id}.${format}${report.monthScoped ? `?month=${month}` : ''}`;
   }
 
+  function filenameFor(report, format) {
+    return report.monthScoped ? `gauamrut-${report.id}-${month}.${format}` : `gauamrut-${report.id}.${format}`;
+  }
+
+  // Sharing reuses the same authenticated request the download button makes —
+  // same permissions, same endpoint, no separate report path to secure.
+  function fetchPdf(report) {
+    return async () => {
+      const r = await api.get(endpointFor(report, 'pdf'), { responseType: 'blob' });
+      return { blob: r.data, filename: filenameFor(report, 'pdf') };
+    };
+  }
+
   async function downloadBlob(endpoint, filename) {
     const r = await api.get(endpoint, { responseType: 'blob' });
     const url = URL.createObjectURL(r.data);
@@ -1040,7 +1065,7 @@ function ReportsView() {
     setBusy(`${report.id}-${format}`);
     setError('');
     try {
-      const name = report.monthScoped ? `gauamrut-${report.id}-${month}.${format}` : `gauamrut-${report.id}.${format}`;
+      const name = filenameFor(report, format);
       await downloadBlob(endpointFor(report, format), name);
     } catch (err) {
       setError(message(err));
@@ -1057,6 +1082,7 @@ function ReportsView() {
         description="Download platform-wide reports spanning every dairy. Month-scoped reports reflect the selected reporting month; the customer directory is all-time with till-date balances."
       />
 
+      <Notice>{notice}</Notice>
       <Notice error>{error}</Notice>
 
       <section className="card" style={{ marginBottom: '18px' }}>
@@ -1096,6 +1122,13 @@ function ReportsView() {
                 >
                   <Download size={17} />{busy === `${report.id}-pdf` ? 'Preparing…' : 'Download PDF'}
                 </button>
+                <ShareReportButton
+                  fetchReport={() => fetchPdf(report)}
+                  shareText={`${report.label} — GauAmrut report`}
+                  disabled={Boolean(busy) || (report.monthScoped && !month)}
+                  onNotice={setNotice}
+                  onError={setError}
+                />
               </div>
             </section>
           );

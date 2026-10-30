@@ -5,6 +5,7 @@ import { Plus, Check, Search, Receipt, AlertCircle, FileText, CheckCircle2, XCir
 import { CollectionsDonut } from '../../components/charts';
 import { Heading, Notice, State, Empty, Modal, Field } from '../../components/ui';
 import ShareToWhatsAppModal from '../../components/ShareToWhatsApp';
+import ShareReportButton from '../../components/ShareReportButton';
 import { api, money, message, decimalUnits, serviceDate } from '../../lib';
 import useData from '../../hooks/useData';
 import { usePlatformSettings } from '../../platform';
@@ -403,14 +404,26 @@ export default function Payments() {
                             >
                               <Download size={14} /> PDF
                             </button>
+                            <ShareReportButton
+                              fetchReport={() => fetchBillPdf(b)}
+                              shareText="Milk bill — GauAmrut"
+                              className="text-button"
+                              style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                              label="Share"
+                              iconSize={14}
+                              busyLabel="Preparing…"
+                              title="Share PDF bill on WhatsApp"
+                              onNotice={setNotice}
+                              onError={setError}
+                            />
                             <button
                               type="button"
                               className="text-button"
                               style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}
-                              title="Share PDF bill on WhatsApp"
+                              title="Send this PDF bill to a WhatsApp number"
                               onClick={() => shareBillPdf(b)}
                             >
-                              <Send size={14} /> WhatsApp
+                              <Send size={14} /> Send to number
                             </button>
                             {!row.provisional && (b.closingPaise > 0 ? (
                               <button type="button" className="button small" onClick={() => open(b)}>

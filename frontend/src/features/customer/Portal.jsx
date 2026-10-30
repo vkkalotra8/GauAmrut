@@ -10,6 +10,7 @@ import { Empty, Field, Heading, Notice, State, Modal } from '../../components/ui
 import { MilkTrend } from '../../components/charts';
 import { demoProducts, demoOrders, demoDisputes } from '../../demo';
 import ShareToWhatsAppModal from '../../components/ShareToWhatsApp';
+import ShareReportButton from '../../components/ShareReportButton';
 
 export function CustomerHome() {
   const { t } = useTranslation();
@@ -485,13 +486,24 @@ export function CustomerPayments() {
                         >
                           <Download size={14} /> PDF
                         </button>
+                        <ShareReportButton
+                          fetchReport={() => fetchBillPdf(currentMonthRow)}
+                          shareText="Monthly milk bill — GauAmrut"
+                          className="text-button"
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', marginLeft: '8px' }}
+                          label="Share"
+                          iconSize={14}
+                          busyLabel="Preparing…"
+                          onNotice={setNotice}
+                          onError={setError}
+                        />
                         <button
                           type="button"
                           className="text-button"
                           style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', marginLeft: '8px' }}
                           onClick={() => shareBillPdf(currentMonthRow)}
                         >
-                          <Send size={14} /> WhatsApp
+                          <Send size={14} /> Send to number
                         </button>
                       </td>
                     </tr>
@@ -517,13 +529,24 @@ export function CustomerPayments() {
                         >
                           <Download size={14} /> PDF
                         </button>
+                        <ShareReportButton
+                          fetchReport={() => fetchBillPdf(b)}
+                          shareText="Monthly milk bill — GauAmrut"
+                          className="text-button"
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', marginLeft: '8px' }}
+                          label="Share"
+                          iconSize={14}
+                          busyLabel="Preparing…"
+                          onNotice={setNotice}
+                          onError={setError}
+                        />
                         <button
                           type="button"
                           className="text-button"
                           style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', marginLeft: '8px' }}
                           onClick={() => shareBillPdf(b)}
                         >
-                          <Send size={14} /> WhatsApp
+                          <Send size={14} /> Send to number
                         </button>
                       </td>
                     </tr>

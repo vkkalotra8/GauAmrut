@@ -200,9 +200,30 @@ describe('New Platform Capabilities Integration Tests', () => {
       expect(api.patch).toHaveBeenCalledWith('/admin/dairies/d-1/verify', { verified: true });
     });
 
-    // Admin can export/share the dairy directory PDF to WhatsApp
+    // Admin can export the dairy directory PDF, share it through the native
+    // share sheet, or push it to a specific number
     expect(screen.getByRole('button', { name: /Download PDF/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Share to WhatsApp/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Share on WhatsApp/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Send to a number/i })).toBeInTheDocument();
+
+    // The share button pulls the same authenticated blob as its download button
+    // and hands the real file to the OS, so WhatsApp receives the PDF itself.
+    const share = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(window.navigator, 'share', { configurable: true, value: share });
+    Object.defineProperty(window.navigator, 'canShare', { configurable: true, value: () => true });
+    try {
+      fireEvent.click(screen.getByRole('button', { name: /Share on WhatsApp/i }));
+      await waitFor(() => expect(share).toHaveBeenCalledTimes(1));
+
+      const [{ files: [file] }] = share.mock.calls[0];
+      expect(file).toBeInstanceOf(File);
+      expect(file.name).toBe('gauamrut-dairy-directory.pdf');
+      expect(file.type).toBe('application/pdf');
+      expect(api.get).toHaveBeenCalledWith('/admin/dairies.pdf', { responseType: 'blob' });
+    } finally {
+      delete window.navigator.share;
+      delete window.navigator.canShare;
+    }
   });
 
   test('CustomerProfile shows verify prompts for unverified contact details', async () => {

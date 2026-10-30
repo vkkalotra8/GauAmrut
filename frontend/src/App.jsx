@@ -26,6 +26,7 @@ import CommandPalette from './components/CommandPalette';
 import NotificationsDrawer from './components/NotificationsDrawer';
 import AnnouncementBanner from './components/AnnouncementBanner';
 import ShareToWhatsAppModal from './components/ShareToWhatsApp';
+import ShareReportButton from './components/ShareReportButton';
 import { usePlatformSettings } from './platform';
 
 const vendorNav = [
@@ -129,10 +130,20 @@ function Reports() {
     const r = await api.get(endpoint, { responseType: 'blob' });
     return { blob: r.data, filename };
   }
-  async function reportError(e) {
-    if (e.response?.data instanceof Blob) {
-      try { setError(JSON.parse(await e.response.data.text()).error.message); } catch { setError(message(e)); }
-    } else setError(message(e));
+  async function reportErrorText(e) {
+    if (e?.response?.data instanceof Blob) {
+      try { return JSON.parse(await e.response.data.text()).error.message; } catch { return message(e); }
+    }
+    return message(e);
+  }
+  async function reportError(e) { setError(await reportErrorText(e)); }
+  // Demo data is a preview, not a dairy: sharing it would send invented figures
+  // to a real person, so the guard throws and lands in the button's error slot.
+  function guardDemo() {
+    if (demo) throw new Error('Sign in to share your dairy’s records. Demo data is for preview only.');
+  }
+  function fetchShare(type) {
+    return async () => { guardDemo(); return getReport(type); };
   }
   async function download(type) {
     setError('');
@@ -182,8 +193,18 @@ function Reports() {
           <button className="button" disabled={Boolean(busyReport) || !month} onClick={() => download('deliveries-pdf')}>
             <Download size={17}/>{busyReport === 'deliveries-pdf' ? 'Preparing PDF…' : 'Download PDF'}
           </button>
+          <ShareReportButton
+            fetchReport={() => fetchShare('deliveries-pdf')}
+            shareText="Monthly delivery report — GauAmrut"
+            className="button"
+            busyLabel="Preparing PDF…"
+            disabled={Boolean(busyReport) || !month}
+            formatError={reportErrorText}
+            onNotice={setNotice}
+            onError={setError}
+          />
           <button className="button" disabled={Boolean(busyReport) || !month} onClick={() => sharePdf('deliveries-pdf')}>
-            <Send size={17}/>{busyReport === 'share-deliveries-pdf' ? 'Preparing PDF…' : 'Share to WhatsApp'}
+            <Send size={17}/>{busyReport === 'share-deliveries-pdf' ? 'Preparing PDF…' : 'Send to a number'}
           </button>
         </div>
       </section>
@@ -200,8 +221,18 @@ function Reports() {
           <button className="button" disabled={Boolean(busyReport) || !month} onClick={() => download('payments-pdf')}>
             <Download size={17}/>{busyReport === 'payments-pdf' ? 'Preparing PDF…' : 'Download PDF'}
           </button>
+          <ShareReportButton
+            fetchReport={() => fetchShare('payments-pdf')}
+            shareText="Payments & collections report — GauAmrut"
+            className="button"
+            busyLabel="Preparing PDF…"
+            disabled={Boolean(busyReport) || !month}
+            formatError={reportErrorText}
+            onNotice={setNotice}
+            onError={setError}
+          />
           <button className="button" disabled={Boolean(busyReport) || !month} onClick={() => sharePdf('payments-pdf')}>
-            <Send size={17}/>{busyReport === 'share-payments-pdf' ? 'Preparing PDF…' : 'Share to WhatsApp'}
+            <Send size={17}/>{busyReport === 'share-payments-pdf' ? 'Preparing PDF…' : 'Send to a number'}
           </button>
         </div>
       </section>
@@ -221,8 +252,18 @@ function Reports() {
           <button className="button" disabled={Boolean(busyReport)} onClick={() => download('customers-pdf')}>
             <Download size={17}/>{busyReport === 'customers-pdf' ? 'Preparing PDF…' : 'Download PDF'}
           </button>
+          <ShareReportButton
+            fetchReport={() => fetchShare('customers-pdf')}
+            shareText="Customer directory summary — GauAmrut"
+            className="button"
+            busyLabel="Preparing PDF…"
+            disabled={Boolean(busyReport)}
+            formatError={reportErrorText}
+            onNotice={setNotice}
+            onError={setError}
+          />
           <button className="button" disabled={Boolean(busyReport)} onClick={() => sharePdf('customers-pdf')}>
-            <Send size={17}/>{busyReport === 'share-customers-pdf' ? 'Preparing PDF…' : 'Share to WhatsApp'}
+            <Send size={17}/>{busyReport === 'share-customers-pdf' ? 'Preparing PDF…' : 'Send to a number'}
           </button>
         </div>
       </section>
@@ -240,8 +281,18 @@ function Reports() {
           <button className="button" disabled={Boolean(busyReport) || !month} onClick={() => download('orders-pdf')}>
             <Download size={17}/>{busyReport === 'orders-pdf' ? 'Preparing PDF…' : 'Download PDF'}
           </button>
+          <ShareReportButton
+            fetchReport={() => fetchShare('orders-pdf')}
+            shareText="Store product orders report — GauAmrut"
+            className="button"
+            busyLabel="Preparing PDF…"
+            disabled={Boolean(busyReport) || !month}
+            formatError={reportErrorText}
+            onNotice={setNotice}
+            onError={setError}
+          />
           <button className="button" disabled={Boolean(busyReport) || !month} onClick={() => sharePdf('orders-pdf')}>
-            <Send size={17}/>{busyReport === 'share-orders-pdf' ? 'Preparing PDF…' : 'Share to WhatsApp'}
+            <Send size={17}/>{busyReport === 'share-orders-pdf' ? 'Preparing PDF…' : 'Send to a number'}
           </button>
         </div>
       </section>
