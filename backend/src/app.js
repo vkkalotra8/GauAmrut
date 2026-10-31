@@ -7,17 +7,18 @@ const mongoose = require('mongoose');
 const { rateLimit } = require('express-rate-limit');
 const { RedisStore } = require('rate-limit-redis');
 const { authRoutes } = require('./auth');
-const { User, Customer, Record, Bill, Payment, Adjustment, Milkman, PaymentRequest, Product, Order, Dispute, DeliveryAdjustment } = require('./models');
+const { User, Customer, Record, Bill, Payment, Adjustment, Milkman, PaymentRequest, PaymentIntent, Product, Order, Dispute, DeliveryAdjustment } = require('./models');
 const { auth, vendor, validate, wrap, scope } = require('./middleware');
 const { AppError, today, csvCell, charge } = require('./domain');
 const schemas = require('./validation');
-const { enterDeliveries, generateBill, recordPayment, outstandingByCustomer, billStatement } = require('./services');
+const { enterDeliveries, generateBill, recordPayment, refreshBilledMonths, outstandingByCustomer, billStatement } = require('./services');
 const { accountsRoutes, change } = require('./accounts');
 const { runMonthlyBillingScheduler } = require('./billing-scheduler');
 const { createNotification, getNotifications, markRead, markAllRead } = require('./notifications');
 const { generateBillPdf, generateReportPdf, formatInr } = require('./pdf');
 const whatsapp = require('./whatsapp');
 const { platformSettings } = require('./settings');
+const { createPaymentIntent, presentPaymentIntent } = require('./upi');
 function createApp(redis) {
   const app = express();
   app.disable('x-powered-by');
@@ -229,6 +230,12 @@ function createApp(redis) {
     ok(res, data, { page: p.page, limit: p.limit, total });
   }));
   api.post('/payments', vendor, validate(schemas.payment), wrap(async (req, res) => { res.status(201); ok(res, await recordPayment(req)); }));
+  api.post('/payment-intents', validate(schemas.paymentIntent), wrap(async (req, res) => {
+    const intent = await createPaymentIntent(req);
+    res.status(201);
+    ok(res, await presentPaymentIntent(intent));
+  }));
+
   api.post('/payments/:id/reverse', vendor, validate(schemas.paymentReversal), wrap(async (req, res) => {
     const { reason } = req.body;
     const result = await change(req, 'payment.reversed', async session => {
@@ -244,6 +251,7 @@ function createApp(redis) {
           bill.closingPaise += payment.amountPaise;
           bill.paidPaise = Math.max(0, bill.paidPaise - payment.amountPaise);
           await bill.save({ session });
+          await refreshBilledMonths(session, { milkmanId: req.tenant, customerId: bill.customer_id, fromMonth: bill.month, fallbackOpening: bill.openingPaise });
         }
       }
 
@@ -263,9 +271,9 @@ function createApp(redis) {
     const payment = await Payment.findOne({ _id: req.params.id, ...scope(req), deleted: false }).lean();
     if (!payment) throw new AppError(404, 'NOT_FOUND', 'Payment was not found.');
     const [milkman, customer, bill] = await Promise.all([
-      Milkman.findById(payment.milkman_id).lean(),
-      Customer.findById(payment.customer_id).lean(),
-      payment.bill_id ? Bill.findById(payment.bill_id).lean() : null
+      Milkman.findOne({ _id: payment.milkman_id }).lean(),
+      Customer.findOne({ _id: payment.customer_id, milkman_id: req.tenant }).lean(),
+      payment.bill_id ? Bill.findOne({ _id: payment.bill_id, milkman_id: req.tenant, customer_id: payment.customer_id }).lean() : null
     ]);
     ok(res, {
       receipt: payment.receipt,
@@ -289,7 +297,9 @@ function createApp(redis) {
         phone: customer?.phone || '',
         address: customer?.address || ''
       },
-      balanceAfterPaise: bill ? bill.closingPaise : null,
+      balanceAfterPaise: Number.isSafeInteger(payment.balanceAfterPaise) ? payment.balanceAfterPaise : null,
+      currentBillBalancePaise: bill ? bill.closingPaise : null,
+      balanceAfterIsHistorical: Number.isSafeInteger(payment.balanceAfterPaise),
       verified: true
     });
   }));
@@ -417,22 +427,64 @@ function createApp(redis) {
     if (!customerId) throw new AppError(400, 'CUSTOMER_REQUIRED', 'Customer identity is required to claim a payment.');
     const customer = await Customer.findOne({ _id: customerId, milkman_id: req.tenant });
     if (!customer) throw new AppError(404, 'NOT_FOUND', 'Customer was not found.');
-    const duplicate = await PaymentRequest.findOne({
-      milkman_id: req.tenant,
-      reference: req.body.reference,
-      status: { $ne: 'rejected' }
-    });
-    if (duplicate) throw new AppError(409, 'DUPLICATE_REFERENCE', 'A payment claim with this reference number already exists.');
-    const [claim] = await PaymentRequest.create([{
-      milkman_id: req.tenant,
-      customer_id: customerId,
-      bill_id: req.body.bill_id || null,
-      amountPaise: req.body.amountPaise,
-      method: req.body.method,
-      reference: req.body.reference,
-      notes: req.body.notes || '',
-      status: 'pending'
-    }]);
+    const referenceCanonical = req.body.reference.toUpperCase();
+    let claim;
+    try {
+      claim = await change(req, 'payment.claim.submitted', async session => {
+        let intent = null;
+        let billId = req.body.bill_id || null;
+        if (req.body.payment_intent_id) {
+          intent = await PaymentIntent.findOne({
+            _id: req.body.payment_intent_id,
+            milkman_id: req.tenant,
+            customer_id: customerId
+          }).session(session);
+          if (!intent) throw new AppError(404, 'NOT_FOUND', 'Payment intent was not found for this customer.');
+          if (intent.payment_request_id || intent.status === 'claim_submitted') {
+            throw new AppError(409, 'INTENT_ALREADY_CLAIMED', 'This payment intent already has a submitted claim.');
+          }
+          if (billId && String(billId) !== String(intent.bill_id)) {
+            throw new AppError(409, 'INTENT_BILL_MISMATCH', 'The selected bill does not match the payment intent.');
+          }
+          if (req.body.amountPaise !== intent.amountPaise) {
+            throw new AppError(409, 'INTENT_AMOUNT_MISMATCH', 'The claim amount must match the payment intent amount.');
+          }
+          billId = intent.bill_id;
+        }
+        let bill;
+        if (billId) {
+          bill = await Bill.findOne({ _id: billId, milkman_id: req.tenant, customer_id: customerId }).session(session);
+          if (!bill) throw new AppError(404, 'NOT_FOUND', 'Finalized bill was not found for this customer.');
+        } else {
+          bill = await Bill.findOne({ milkman_id: req.tenant, customer_id: customerId, closingPaise: { $gt: 0 } }).sort({ month: 1 }).session(session);
+          if (!bill) throw new AppError(409, 'NO_OUTSTANDING_BILLS', 'Customer has no outstanding bills for this claim.');
+          billId = bill._id;
+        }
+        let status = 'pending';
+        let reconciliationCode;
+        let reconciliationNotes;
+        if (req.body.amountPaise > bill.closingPaise) {
+          if (!intent) throw new AppError(409, 'INVALID_PAYMENT', 'Claim amount exceeds the current outstanding bill balance.');
+          status = 'reconciliation_required';
+          reconciliationCode = bill.closingPaise === 0 ? 'BILL_SETTLED' : 'BALANCE_CHANGED';
+          reconciliationNotes = `Intent captured Rs. ${(intent.amountPaise / 100).toFixed(2)}; current bill balance is Rs. ${(bill.closingPaise / 100).toFixed(2)}.`;
+        }
+        const [created] = await PaymentRequest.create([{
+          milkman_id: req.tenant, customer_id: customerId, bill_id: billId, payment_intent_id: intent?._id || null,
+          amountPaise: req.body.amountPaise, method: req.body.method, reference: req.body.reference, referenceCanonical,
+          notes: req.body.notes || '', status, reconciliationCode, reconciliationNotes
+        }], { session });
+        if (intent) {
+          intent.status = 'claim_submitted';
+          intent.payment_request_id = created._id;
+          await intent.save({ session });
+        }
+        return { before: null, after: created.toObject(), target: created._id };
+      });
+    } catch (error) {
+      if (error?.code === 11000) throw new AppError(409, 'DUPLICATE_REFERENCE', 'A payment claim with this reference number already exists.');
+      throw error;
+    }
     if (isCustomer) {
       const milkmanUser = await User.findOne({ milkman_id: req.tenant, role: 'milkman' });
       if (milkmanUser) {
@@ -449,30 +501,45 @@ function createApp(redis) {
       }
     }
     res.status(201);
-    ok(res, claim.toObject());
+    ok(res, claim);
   }));
   api.get('/payment-claims', wrap(async (req, res) => {
     const p = page(req);
     const filter = req.user.role === 'customer'
-      ? { customer_id: req.user.customer_id }
+      ? { customer_id: req.user.customer_id, milkman_id: req.tenant }
       : { milkman_id: req.tenant, ...(req.query.status ? { status: req.query.status } : {}) };
     const [data, total] = await Promise.all([
       PaymentRequest.find(filter).sort({ createdAt: -1 }).skip(p.skip).limit(p.limit).lean(),
       PaymentRequest.countDocuments(filter)
     ]);
     const custIds = [...new Set(data.map(d => String(d.customer_id)))];
-    const customers = await Customer.find({ _id: { $in: custIds } }).select('name phone').lean();
+    const billIds = [...new Set(data.map(d => d.bill_id).filter(Boolean).map(String))];
+    const claimBills = await Bill.find({ _id: { $in: billIds }, milkman_id: req.tenant }).select('month closingPaise').lean();
+    const customers = await Customer.find({ _id: { $in: custIds }, milkman_id: req.tenant }).select('name phone').lean();
     const result = data.map(d => ({
       ...d,
-      customerName: customers.find(c => String(c._id) === String(d.customer_id))?.name || 'Customer'
+      customerName: customers.find(c => String(c._id) === String(d.customer_id))?.name || 'Customer',
+      billMonth: claimBills.find(b => String(b._id) === String(d.bill_id))?.month,
+      currentBillBalancePaise: claimBills.find(b => String(b._id) === String(d.bill_id))?.closingPaise
     }));
     ok(res, result, { page: p.page, limit: p.limit, total });
   }));
   api.patch('/payment-claims/:id/review', vendor, validate(schemas.claimReview), wrap(async (req, res) => {
     const { action, reason } = req.body;
     const result = await change(req, `payment.claim.${action}`, async session => {
-      const claim = await PaymentRequest.findOne({ _id: req.params.id, milkman_id: req.tenant, status: 'pending' }).session(session);
-      if (!claim) throw new AppError(404, 'NOT_FOUND', 'Pending payment claim was not found.');
+      const claim = await PaymentRequest.findOne({ _id: req.params.id, milkman_id: req.tenant }).session(session);
+      if (!claim) throw new AppError(404, 'NOT_FOUND', 'Payment claim was not found.');
+      if (claim.status === 'approved' && action === 'approve' && claim.payment_id) {
+        const payment = await Payment.findOne({ _id: claim.payment_id, milkman_id: req.tenant }).session(session);
+        if (!payment) throw new AppError(409, 'CLAIM_PAYMENT_MISSING', 'The approved claim is missing its linked payment record.');
+        return { before: claim.toObject(), after: { claim: claim.toObject(), payment: payment.toObject(), replayed: true }, target: claim._id, audit: false };
+      }
+      if (claim.status === 'rejected' && action === 'reject') {
+        return { before: claim.toObject(), after: { ...claim.toObject(), replayed: true }, target: claim._id, audit: false };
+      }
+      if (!['pending', 'reconciliation_required'].includes(claim.status)) {
+        throw new AppError(409, 'CLAIM_ALREADY_REVIEWED', 'This payment claim has already been reviewed.');
+      }
       if (action === 'reject') {
         const before = claim.toObject();
         claim.status = 'rejected';
@@ -482,38 +549,45 @@ function createApp(redis) {
         await claim.save({ session });
         return { before, after: claim.toObject(), target: claim._id };
       }
-      let bill;
-      if (claim.bill_id) {
-        bill = await Bill.findOne({ _id: claim.bill_id, milkman_id: req.tenant }).session(session);
-      } else {
-        bill = await Bill.findOne({ customer_id: claim.customer_id, milkman_id: req.tenant, closingPaise: { $gt: 0 } }).sort({ month: 1 }).session(session);
+      const bill = claim.bill_id
+        ? await Bill.findOne({ _id: claim.bill_id, milkman_id: req.tenant, customer_id: claim.customer_id }).session(session)
+        : await Bill.findOne({ customer_id: claim.customer_id, milkman_id: req.tenant, closingPaise: { $gt: 0 } }).sort({ month: 1 }).session(session);
+      if (!bill || bill.closingPaise < claim.amountPaise) {
+        const before = claim.toObject();
+        claim.status = 'reconciliation_required';
+        claim.reconciliationCode = !bill || bill.closingPaise === 0 ? 'BILL_SETTLED' : 'BALANCE_CHANGED';
+        claim.reconciliationNotes = !bill
+          ? 'The target bill is no longer available for allocation.'
+          : `Verified amount is Rs. ${(claim.amountPaise / 100).toFixed(2)}; current bill balance is Rs. ${(bill.closingPaise / 100).toFixed(2)}. No ledger entry was created.`;
+        await claim.save({ session });
+        return { before, after: { claim: claim.toObject(), reconciliationRequired: true }, target: claim._id };
       }
-      if (!bill) throw new AppError(409, 'NO_OUTSTANDING_BILLS', 'Customer has no outstanding bills to allocate this payment to.');
-      if (bill.closingPaise < claim.amountPaise) throw new AppError(409, 'INVALID_PAYMENT', 'Claim amount exceeds outstanding bill balance.');
+      const before = claim.toObject();
       bill.paidPaise += claim.amountPaise;
       bill.closingPaise -= claim.amountPaise;
       await bill.save({ session });
-      const receipt = 'GA-' + crypto.randomUUID();
+      await refreshBilledMonths(session, { milkmanId: req.tenant, customerId: bill.customer_id, fromMonth: bill.month, fallbackOpening: bill.openingPaise });
       const [payment] = await Payment.create([{
-        milkman_id: req.tenant,
-        customer_id: claim.customer_id,
-        bill_id: bill._id,
-        amountPaise: claim.amountPaise,
-        method: claim.method,
-        reference: claim.reference,
-        receipt
+        milkman_id: req.tenant, customer_id: claim.customer_id, bill_id: bill._id,
+        amountPaise: claim.amountPaise, balanceAfterPaise: bill.closingPaise,
+        method: claim.method, reference: claim.reference,
+        receipt: 'GA-' + crypto.randomUUID()
       }], { session });
-      const before = claim.toObject();
       claim.status = 'approved';
       claim.reviewedBy = req.user._id;
       claim.reviewedAt = new Date();
       claim.payment_id = payment._id;
+      claim.reconciliationCode = undefined;
+      claim.reconciliationNotes = undefined;
       await claim.save({ session });
       return { before, after: { claim: claim.toObject(), payment: payment.toObject() }, target: claim._id };
     });
 
-    const targetCustomer = await Customer.findById(result.claim ? result.claim.customer_id : result.customer_id);
-    if (targetCustomer?.user_id) {
+    const replayed = Boolean(result.replayed);
+    const reconciliationRequired = Boolean(result.reconciliationRequired);
+    const targetClaim = result.claim || result;
+    const targetCustomer = await Customer.findOne({ _id: targetClaim.customer_id, milkman_id: req.tenant });
+    if (!replayed && !reconciliationRequired && targetCustomer?.user_id) {
       await createNotification({
         recipient: targetCustomer.user_id,
         role: 'customer',
@@ -524,7 +598,7 @@ function createApp(redis) {
           ? `Your payment of Rs. ${(result.payment.amountPaise / 100).toFixed(2)} was verified and credited.`
           : `Your payment claim was rejected.${reason ? ` Reason: ${reason}` : ''}`,
         link: '/payments',
-        relatedId: result.claim ? result.claim._id : result._id
+        relatedId: targetClaim._id
       });
     }
 

@@ -170,6 +170,7 @@ async function recordPayment(req) {
     targetBill.paidPaise += amountPaise;
     targetBill.closingPaise -= amountPaise;
     await targetBill.save({ session });
+    await refreshBilledMonths(session, { milkmanId: req.tenant, customerId: targetBill.customer_id, fromMonth: targetBill.month, fallbackOpening: targetBill.openingPaise });
 
     const receipt = 'GA-' + crypto.randomUUID();
     const [payment] = await Payment.create([{
@@ -177,6 +178,7 @@ async function recordPayment(req) {
       customer_id: targetBill.customer_id,
       bill_id: targetBill._id,
       amountPaise,
+      balanceAfterPaise: targetBill.closingPaise,
       method,
       ...(reference ? { reference } : {}),
       receipt

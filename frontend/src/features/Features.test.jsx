@@ -156,6 +156,44 @@ describe('New Platform Capabilities Integration Tests', () => {
     });
   });
 
+  test('CustomerPayments generates a QR and UPI app handoff without claiming settlement', async () => {
+    const mockBills = [
+      { _id: 'bill-upi', month: '2026-08', openingPaise: 0, chargesPaise: 12550, paidPaise: 0, closingPaise: 12550 }
+    ];
+    useData.mockImplementation((path) => {
+      if (path === '/bills/statement?month=2026-10') return { data: null, loading: false, error: '', reload: vi.fn() };
+      if (path.startsWith('/bills')) return { data: mockBills, loading: false, error: '', reload: vi.fn(), meta: { total: 1 } };
+      return { data: [], loading: false, error: '', reload: vi.fn(), meta: { total: 0 } };
+    });
+    api.post.mockResolvedValueOnce({ data: { data: {
+      id: 'intent-1', bill_id: 'bill-upi', amountPaise: 505, currency: 'INR',
+      payee: { upiId: 'dairy@bank', name: 'Pure Farm Dairy' },
+      internalReference: 'GAUPI-test', status: 'active',
+      expiresAt: '2026-10-31T12:00:00.000Z',
+      upiUri: 'upi://pay?pa=dairy%40bank&pn=Pure+Farm+Dairy&am=5.05&cu=INR&tn=GAUPI-test',
+      qrDataUrl: 'data:image/png;base64,AAAA', settlementStatus: 'unverified'
+    } } });
+
+    render(<Provider store={store}><MemoryRouter><CustomerPayments /></MemoryRouter></Provider>);
+    fireEvent.click(await screen.findByRole('button', { name: /Pay now/i }));
+    expect(screen.getByText('Outstanding balance')).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Amount to pay (?)'), { target: { value: '5.05' } });
+    fireEvent.click(screen.getByRole('button', { name: /Generate UPI QR/i }));
+
+    await waitFor(() => expect(api.post).toHaveBeenCalledWith(
+      '/payment-intents',
+      { bill_id: 'bill-upi', amountPaise: 505 },
+      { headers: { 'Idempotency-Key': expect.stringMatching(/^upi-bill-upi-505-/) } }
+    ));
+    expect(await screen.findByAltText('UPI payment QR for Pure Farm Dairy')).toHaveAttribute('src', 'data:image/png;base64,AAAA');
+    expect(screen.getByRole('link', { name: /Pay via UPI app/i })).toHaveAttribute('href', expect.stringContaining('upi://pay')) ;
+    expect(screen.getByText(/Complete payment in your UPI app/)).toBeInTheDocument();
+    expect(screen.queryByText(/Payment successful/i)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Submit payment details' }));
+    expect(await screen.findByRole('heading', { name: 'Submit a payment claim' })).toBeInTheDocument();
+    expect(screen.getByText(/must verify the transaction reference/)).toBeInTheDocument();
+  });
+
   test('AdminPortal renders platform sections with management actions', async () => {
     store.dispatch(signIn({
       user: {

@@ -1,4 +1,5 @@
 const { execFileSync } = require('node:child_process');
+const { URL } = require('node:url');
 const mongoose = require('mongoose');
 const jwt = require('jsonwebtoken');
 const request = require('supertest');
@@ -170,6 +171,39 @@ describe('Milestone 3 - Financial Workflow & Commerce', () => {
     expect(receipt.balanceAfterPaise).toBe(5000);
     expect(receipt.verified).toBe(true);
   });
+  test('historical receipt balances remain stable while payments and reversals cascade to later bills', async () => {
+    const january = (await post('/bills', { customer_id: String(customerDocA._id), month: '2025-01' })).body.data;
+    await post('/bills', { customer_id: String(customerDocA._id), month: '2025-02' });
+
+    const firstPayment = (await post('/payments', {
+      bill_id: january._id, amountPaise: 2000, method: 'cash'
+    }, 'cascade-payment-one')).body.data;
+    let february = await models.Bill.findOne({ customer_id: customerDocA._id, month: '2025-02' });
+    expect(february.openingPaise).toBe(3000);
+    expect(february.closingPaise).toBe(3000);
+
+    await post('/payments', {
+      bill_id: january._id, amountPaise: 1000, method: 'cash'
+    }, 'cascade-payment-two');
+    let receipt = (await get(`/payments/${firstPayment._id}/receipt`, customerTokenA)).body.data;
+    expect(receipt.balanceAfterPaise).toBe(3000);
+    expect(receipt.currentBillBalancePaise).toBe(2000);
+    expect(receipt.balanceAfterIsHistorical).toBe(true);
+
+    await request(app)
+      .post(`/api/payments/${firstPayment._id}/reverse`)
+      .set('Authorization', `Bearer ${tokenA}`)
+      .send({ reason: 'Bank settlement was reversed' });
+    february = await models.Bill.findOne({ customer_id: customerDocA._id, month: '2025-02' });
+    expect(february.openingPaise).toBe(4000);
+    expect(february.closingPaise).toBe(4000);
+
+    receipt = (await get(`/payments/${firstPayment._id}/receipt`, customerTokenA)).body.data;
+    expect(receipt.balanceAfterPaise).toBe(3000);
+    expect(receipt.currentBillBalancePaise).toBe(4000);
+    expect(receipt.reversed).toBe(true);
+  });
+
 
   test('distributed lock concurrency and automated monthly billing scheduler', async () => {
     // Test lock acquisition and mutual exclusion
@@ -274,19 +308,123 @@ describe('Milestone 3 - Financial Workflow & Commerce', () => {
     expect(correctedClaimRes.status).toBe(201);
     const newClaim = correctedClaimRes.body.data;
 
+    const missingAttestation = await patch(`/payment-claims/${newClaim._id}/review`, { action: 'approve' }, tokenA);
+    expect(missingAttestation.status).toBe(400);
+    const customerApproval = await patch(`/payment-claims/${newClaim._id}/review`, { action: 'approve', settlementConfirmed: true }, customerTokenA);
+    expect(customerApproval.status).toBe(403);
+    expect((await models.PaymentRequest.findById(newClaim._id)).status).toBe('pending');
+    expect(await models.Payment.countDocuments({ reference: 'UTR9988776655' })).toBe(0);
+
     // 7. Vendor approves claim
     const approveRes = await patch(`/payment-claims/${newClaim._id}/review`, {
-      action: 'approve'
+      action: 'approve', settlementConfirmed: true
     }, tokenA);
     expect(approveRes.status).toBe(200);
     const approval = approveRes.body.data;
     expect(approval.claim.status).toBe('approved');
     expect(approval.payment.receipt).toMatch(/^GA-/);
+    const approvalRetry = await patch(`/payment-claims/${newClaim._id}/review`, { action: 'approve', settlementConfirmed: true }, tokenA);
+    expect(approvalRetry.status).toBe(200);
+    expect(approvalRetry.body.data.replayed).toBe(true);
+    expect(approvalRetry.body.data.payment._id).toBe(approval.payment._id);
+    expect(await models.Payment.countDocuments({ reference: 'UTR9988776655' })).toBe(1);
+
 
     // Verify bill was atomically updated
     const updatedBill = await models.Bill.findById(bill._id);
     expect(updatedBill.paidPaise).toBe(5000);
     expect(updatedBill.closingPaise).toBe(bill.closingPaise - 5000);
+  });
+
+  test('intent-linked claims preserve stale-payment evidence and canonical references are unique', async () => {
+    const billRes = await post('/bills', { customer_id: String(customerDocA._id), month: '2025-01' });
+    const bill = billRes.body.data;
+    const intentRes = await request(app)
+      .post('/api/payment-intents')
+      .set('Authorization', `Bearer ${customerTokenA}`)
+      .set('Idempotency-Key', 'phase5-stale-intent')
+      .send({ bill_id: bill._id, amountPaise: 3000 });
+    expect(intentRes.status).toBe(201);
+
+    await models.Bill.updateOne({ _id: bill._id }, { $set: { closingPaise: 1000 } });
+    const claimRes = await request(app)
+      .post('/api/payment-claims')
+      .set('Authorization', `Bearer ${customerTokenA}`)
+      .send({
+        bill_id: bill._id,
+        payment_intent_id: intentRes.body.data.id,
+        amountPaise: 3000,
+        method: 'upi',
+        reference: 'upi-stale-001'
+      });
+    expect(claimRes.status).toBe(201);
+    expect(claimRes.body.data.status).toBe('reconciliation_required');
+    expect(claimRes.body.data.reconciliationCode).toBe('BALANCE_CHANGED');
+    const reconciliationReview = await patch(`/payment-claims/${claimRes.body.data._id}/review`, { action: 'approve', settlementConfirmed: true }, tokenA);
+    expect(reconciliationReview.status).toBe(200);
+    expect(reconciliationReview.body.data.reconciliationRequired).toBe(true);
+    expect(reconciliationReview.body.data.claim.status).toBe('reconciliation_required');
+    expect(reconciliationReview.body.data.payment).toBeUndefined();
+    expect(await models.Payment.countDocuments({ reference: 'upi-stale-001' })).toBe(0);
+
+
+    const linkedIntent = await models.PaymentIntent.findById(intentRes.body.data.id);
+    expect(linkedIntent.status).toBe('claim_submitted');
+    expect(String(linkedIntent.payment_request_id)).toBe(claimRes.body.data._id);
+    const unchangedBill = await models.Bill.findById(bill._id);
+    expect(unchangedBill.closingPaise).toBe(1000);
+
+    const duplicate = await request(app)
+      .post('/api/payment-claims')
+      .set('Authorization', `Bearer ${customerTokenA}`)
+      .send({ bill_id: bill._id, amountPaise: 500, method: 'upi', reference: 'UPI-STALE-001' });
+    expect(duplicate.status).toBe(409);
+    expect(duplicate.body.error.code).toBe('DUPLICATE_REFERENCE');
+  });
+
+
+  test('concurrent claim approvals create one payment, one audit, and one customer notification', async () => {
+    const bill = (await post('/bills', { customer_id: String(customerDocA._id), month: '2025-01' })).body.data;
+    const claim = (await request(app)
+      .post('/api/payment-claims')
+      .set('Authorization', `Bearer ${customerTokenA}`)
+      .send({ bill_id: bill._id, amountPaise: 2000, method: 'upi', reference: 'CONCURRENT-CLAIM-001' })).body.data;
+
+    const responses = await Promise.all([
+      patch(`/payment-claims/${claim._id}/review`, { action: 'approve', settlementConfirmed: true }, tokenA),
+      patch(`/payment-claims/${claim._id}/review`, { action: 'approve', settlementConfirmed: true }, tokenA)
+    ]);
+    expect(responses.map(r => r.status)).toEqual([200, 200]);
+    expect(responses.filter(r => r.body.data.replayed).length).toBe(1);
+    expect(await models.Payment.countDocuments({ reference: 'CONCURRENT-CLAIM-001' })).toBe(1);
+    expect(await models.Audit.countDocuments({ action: 'payment.claim.approve', target: String(claim._id) })).toBe(1);
+    expect(await models.Notification.countDocuments({ recipient: customerUserA._id, title: 'Payment Claim Approved', relatedId: claim._id })).toBe(1);
+    const updatedBill = await models.Bill.findById(bill._id);
+    expect(updatedBill.paidPaise).toBe(2000);
+    expect(updatedBill.closingPaise).toBe(bill.closingPaise - 2000);
+  });
+
+  test('collection reports exclude unverified claims and reversed amounts from totals', async () => {
+    const bill = (await post('/bills', { customer_id: String(customerDocA._id), month: '2025-01' })).body.data;
+    await request(app)
+      .post('/api/payment-claims')
+      .set('Authorization', `Bearer ${customerTokenA}`)
+      .send({ bill_id: bill._id, amountPaise: 1000, method: 'upi', reference: 'UNVERIFIED-REPORT-001' });
+
+    const payment = (await post('/payments', {
+      bill_id: bill._id, amountPaise: 1000, method: 'cash'
+    }, 'reversed-report-payment')).body.data;
+    await request(app)
+      .post(`/api/payments/${payment._id}/reverse`)
+      .set('Authorization', `Bearer ${tokenA}`)
+      .send({ reason: 'Test reversal for report totals' });
+
+    const report = await get(`/reports/payments.csv?month=${today().slice(0, 7)}`, tokenA);
+    expect(report.status).toBe(200);
+    expect(report.text).toContain(payment.receipt);
+    expect(report.text).toContain('Yes');
+    expect(report.text).not.toContain('UNVERIFIED-REPORT-001');
+    expect(report.text).toContain('"Total Paise","0"');
   });
 
   test('payment reversal restores bill balance, requires permission and reason, and creates audit log', async () => {
@@ -541,3 +679,96 @@ describe('Mid-month billing, live bill refresh, and till-date dashboard stats', 
   });
 });
 
+
+describe('UPI payment initiation', () => {
+  async function billFor(customer = customerDocA, tenant = ownerA.milkman_id, closingPaise = 12550) {
+    return models.Bill.create({ milkman_id: tenant, customer_id: customer._id, month: '2025-02', openingPaise: 0, chargesPaise: closingPaise, paidPaise: 0, closingPaise });
+  }
+
+  test('creates an idempotent bill-specific UPI URI and QR from authoritative data', async () => {
+    const bill = await billFor();
+    const first = await post('/payment-intents', { bill_id: String(bill._id), amountPaise: 505 }, 'upi-intent-retry', customerTokenA);
+    expect(first.status).toBe(201);
+    expect(first.body.data.amountPaise).toBe(505);
+    expect(first.body.data.payee).toEqual({ upiId: 'aarav@okaxis', name: 'Aarav Organic Milk' });
+    expect(first.body.data.qrDataUrl).toMatch(/^data:image\/png;base64,/);
+    expect(first.body.data.settlementStatus).toBe('unverified');
+    const uri = new URL(first.body.data.upiUri);
+    expect(uri.protocol).toBe('upi:');
+    expect(uri.hostname).toBe('pay');
+    expect(uri.searchParams.get('pa')).toBe('aarav@okaxis');
+    expect(uri.searchParams.get('pn')).toBe('Aarav Organic Milk');
+    expect(uri.searchParams.get('am')).toBe('5.05');
+    expect(uri.searchParams.get('cu')).toBe('INR');
+    expect(uri.searchParams.get('tn')).toContain(first.body.data.internalReference);
+
+    const replay = await post('/payment-intents', { bill_id: String(bill._id), amountPaise: 505 }, 'upi-intent-retry', customerTokenA);
+    expect(replay.status).toBe(201);
+    expect(replay.body.data.id).toBe(first.body.data.id);
+    expect(await models.PaymentIntent.countDocuments()).toBe(1);
+    expect((await models.Bill.findById(bill._id)).closingPaise).toBe(12550);
+  });
+
+  test('defaults to the current outstanding balance and rejects invalid allocation', async () => {
+    const bill = await billFor();
+    const full = await post('/payment-intents', { bill_id: String(bill._id) }, 'upi-full-balance', customerTokenA);
+    expect(full.status).toBe(201);
+    expect(full.body.data.amountPaise).toBe(12550);
+    expect(new URL(full.body.data.upiUri).searchParams.get('am')).toBe('125.50');
+    expect((await post('/payment-intents', { bill_id: String(bill._id), amountPaise: 12551 }, 'upi-overpay', customerTokenA)).status).toBe(409);
+    expect((await post('/payment-intents', { bill_id: String(bill._id), amountPaise: 0 }, 'upi-zero', customerTokenA)).status).toBe(400);
+  });
+
+  test('accepts an expired intent as unverified reconciliation evidence without changing the ledger', async () => {
+    const bill = await billFor();
+    const intentResponse = await post('/payment-intents', { bill_id: String(bill._id), amountPaise: 2500 }, 'expired-intent-evidence', customerTokenA);
+    await models.PaymentIntent.updateOne(
+      { _id: intentResponse.body.data.id },
+      { status: 'expired', expiresAt: new Date(Date.now() - 60000) }
+    );
+
+    const claimResponse = await request(app)
+      .post('/api/payment-claims')
+      .set('Authorization', `Bearer ${customerTokenA}`)
+      .send({
+        bill_id: String(bill._id),
+        payment_intent_id: intentResponse.body.data.id,
+        amountPaise: 2500,
+        method: 'upi',
+        reference: 'EXPIRED-INTENT-001'
+      });
+    expect(claimResponse.status).toBe(201);
+    expect(claimResponse.body.data.status).toBe('pending');
+    expect(await models.Payment.countDocuments({ reference: 'EXPIRED-INTENT-001' })).toBe(0);
+    expect((await models.Bill.findById(bill._id)).closingPaise).toBe(12550);
+    const intent = await models.PaymentIntent.findById(intentResponse.body.data.id);
+    expect(intent.status).toBe('claim_submitted');
+    expect(String(intent.payment_request_id)).toBe(claimResponse.body.data._id);
+  });
+
+  test('enforces customer, bill, and tenant ownership', async () => {
+    const bill = await billFor();
+    const otherCustomer = await models.Customer.create({ ...customerFields, name: 'Other Customer', milkman_id: ownerA.milkman_id });
+    const otherUser = await models.User.create({ email: 'other-customer@example.com', name: 'Other Customer', password: 'hash', role: 'customer', milkman_id: ownerA.milkman_id, customer_id: otherCustomer._id });
+    await models.Customer.updateOne({ _id: otherCustomer._id }, { user_id: otherUser._id });
+    expect((await post('/payment-intents', { bill_id: String(bill._id) }, 'upi-wrong-customer', token(otherUser))).status).toBe(404);
+
+    const foreignTenant = new mongoose.Types.ObjectId();
+    const foreignOwner = await models.User.create({ email: 'foreign-owner@example.com', name: 'Foreign', password: 'hash', role: 'milkman', milkman_id: foreignTenant });
+    await models.Milkman.create({ _id: foreignTenant, user_id: foreignOwner._id, businessName: 'Foreign Dairy', upiId: 'foreign@bank', code: 'FOREIGN1' });
+    const foreignCustomer = await models.Customer.create({ ...customerFields, name: 'Foreign Customer', milkman_id: foreignTenant });
+    const foreignUser = await models.User.create({ email: 'foreign-customer@example.com', name: 'Foreign Customer', password: 'hash', role: 'customer', milkman_id: foreignTenant, customer_id: foreignCustomer._id });
+    await models.Customer.updateOne({ _id: foreignCustomer._id }, { user_id: foreignUser._id });
+    expect((await post('/payment-intents', { bill_id: String(bill._id) }, 'upi-wrong-tenant', token(foreignUser))).status).toBe(404);
+    expect((await post('/payment-intents', { bill_id: String(bill._id) }, 'upi-vendor-denied', tokenA)).status).toBe(403);
+  });
+
+  test('refuses initiation when the dairy UPI configuration is missing or invalid', async () => {
+    const bill = await billFor();
+    await models.Milkman.updateOne({ _id: ownerA.milkman_id }, { upiId: '' });
+    const missing = await post('/payment-intents', { bill_id: String(bill._id) }, 'upi-missing-config', customerTokenA);
+    expect(missing.status).toBe(409);
+    expect(missing.body.error.code).toBe('UPI_NOT_CONFIGURED');
+    expect(await models.PaymentIntent.countDocuments()).toBe(0);
+  });
+});

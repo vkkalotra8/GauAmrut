@@ -11,8 +11,8 @@ async function change(req, action, operation) {
   let result;
   try {
     await session.withTransaction(async () => {
-      const { before, after, target } = await operation(session);
-      await Audit.create([{ milkman_id: req.tenant, actor: req.user._id, action, target: String(target), requestId: req.requestId, before, after }], { session });
+      const { before, after, target, audit = true } = await operation(session);
+      if (audit) await Audit.create([{ milkman_id: req.tenant, actor: req.user._id, action, target: String(target), requestId: req.requestId, before, after }], { session });
       result = after;
     });
     return result;

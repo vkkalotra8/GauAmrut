@@ -3,6 +3,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { NavLink, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Plus, Check, X, Clock, CheckCircle2, MessageSquare, AlertCircle, ShoppingBag, Send, XCircle, Download, Calendar, PauseCircle } from 'lucide-react';
+import { QrCode, Copy, ExternalLink, ShieldCheck } from 'lucide-react';
 import { api, message, money, updateUser, decimalUnits, serviceDate } from '../../lib';
 import useData from '../../hooks/useData';
 import { usePlatformSettings } from '../../platform';
@@ -332,6 +333,12 @@ export function CustomerPayments() {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [copied, setCopied] = useState(false);
+  const [payingBill, setPayingBill] = useState(null);
+  const [paymentIntent, setPaymentIntent] = useState(null);
+  const [paymentBusy, setPaymentBusy] = useState(false);
+  const [paymentError, setPaymentError] = useState('');
+  const [paymentCopied, setPaymentCopied] = useState('');
+  const [claimDraft, setClaimDraft] = useState(null);
 
   const totalOutstanding = bills.data?.reduce((sum, b) => sum + (b.closingPaise || 0), 0) || 0;
 
@@ -342,6 +349,48 @@ export function CustomerPayments() {
   const currentBill = bills.data?.find(b => b.month === currentMonth);
   const currentMonthRow = currentBill || (statement.data && statement.data.month === currentMonth ? statement.data : null);
 
+  function openPayment(bill) {
+    setPayingBill(bill);
+    setPaymentIntent(null);
+    setPaymentError('');
+    setPaymentCopied('');
+  }
+
+  async function initiateUpiPayment(e) {
+    e.preventDefault();
+    setPaymentBusy(true);
+    setPaymentError('');
+    try {
+      const f = Object.fromEntries(new FormData(e.currentTarget));
+      const amountPaise = decimalUnits(f.amount);
+      const key = `upi-${payingBill._id}-${amountPaise}-${Date.now()}`;
+      const res = await api.post('/payment-intents', { bill_id: payingBill._id, amountPaise }, { headers: { 'Idempotency-Key': key } });
+      setPaymentIntent(res.data.data);
+    } catch (err) {
+      setPaymentError(message(err));
+    } finally {
+      setPaymentBusy(false);
+    }
+  }
+
+  async function copyPaymentValue(label, value) {
+    try {
+      await navigator.clipboard.writeText(String(value));
+      setPaymentCopied(label);
+      setTimeout(() => setPaymentCopied(''), 2000);
+    } catch {
+      setPaymentError('Copy is unavailable in this browser. Select the value and copy it manually.');
+    }
+  }
+
+  function submitPaymentDetails() {
+    setClaimDraft({ bill_id: payingBill._id, amount: (paymentIntent.amountPaise / 100).toFixed(2), payment_intent_id: paymentIntent.id });
+    setPayingBill(null);
+    setPaymentIntent(null);
+    setError('');
+    setClaimModalOpen(true);
+  }
+
   async function submitClaim(e) {
     e.preventDefault();
     setBusy(true);
@@ -350,6 +399,7 @@ export function CustomerPayments() {
       const f = Object.fromEntries(new FormData(e.currentTarget));
       await api.post('/payment-claims', {
         bill_id: f.bill_id || undefined,
+        payment_intent_id: claimDraft?.payment_intent_id || undefined,
         amountPaise: decimalUnits(f.amount),
         method: f.method,
         reference: f.reference,
@@ -478,6 +528,11 @@ export function CustomerPayments() {
                         </span>
                       </td>
                       <td>
+                        {currentMonthRow._id && currentMonthRow.closingPaise > 0 && (
+                          <button type="button" className="button small primary" onClick={() => openPayment(currentMonthRow)}>
+                            <QrCode size={14} /> Pay now
+                          </button>
+                        )}
                         <button
                           type="button"
                           className="text-button"
@@ -521,6 +576,11 @@ export function CustomerPayments() {
                         </span>
                       </td>
                       <td>
+                        {b.closingPaise > 0 && (
+                          <button type="button" className="button small primary" onClick={() => openPayment(b)}>
+                            <QrCode size={14} /> Pay now
+                          </button>
+                        )}
                         <button
                           type="button"
                           className="text-button"
@@ -734,10 +794,79 @@ export function CustomerPayments() {
         <Pager page={paymentPage} setPage={setPaymentPage} total={payments.meta?.total || 0} />
       </section>
 
+      {payingBill && (
+        <Modal title="Pay with UPI" close={() => { setPayingBill(null); setPaymentIntent(null); setPaymentError(''); }}>
+          {!paymentIntent ? (
+            <form onSubmit={initiateUpiPayment}>
+              <div className="upi-summary">
+                <span>Bill month <b>{payingBill.month}</b></span>
+                <span>Outstanding balance <b>{money(payingBill.closingPaise)}</b></span>
+              </div>
+              <Field
+                label="Amount to pay (?)"
+                name="amount"
+                type="number"
+                min="0.01"
+                max={(payingBill.closingPaise / 100).toFixed(2)}
+                step="0.01"
+                defaultValue={(payingBill.closingPaise / 100).toFixed(2)}
+                required
+                autoFocus
+              />
+              <Notice>
+                Opening a UPI app does not confirm payment. Your dairy will credit the payment only after checking its receiving bank account.
+              </Notice>
+              {paymentError && <Notice error>{paymentError}</Notice>}
+              <button type="submit" className="button primary full" disabled={paymentBusy}>
+                <QrCode size={16} /> {paymentBusy ? 'Preparing secure QR.' : 'Generate UPI QR'}
+              </button>
+            </form>
+          ) : (
+            <div className="upi-payment">
+              <div className="upi-payee">
+                <div><small>Pay to</small><b>{paymentIntent.payee.name}</b><code>{paymentIntent.payee.upiId}</code></div>
+                <span className="status pending"><ShieldCheck size={13} /> Verification required</span>
+              </div>
+              <div className="upi-qr-wrap">
+                <img src={paymentIntent.qrDataUrl} alt={`UPI payment QR for ${paymentIntent.payee.name}`} />
+                <div>
+                  <small>Exact amount</small>
+                  <strong>{money(paymentIntent.amountPaise)}</strong>
+                  <span>Bill {payingBill.month}</span>
+                </div>
+              </div>
+              <div className="upi-copy-grid">
+                <button type="button" className="button small" onClick={() => copyPaymentValue('upi', paymentIntent.payee.upiId)}>
+                  <Copy size={14} /> {paymentCopied === 'upi' ? 'UPI ID copied' : 'Copy UPI ID'}
+                </button>
+                <button type="button" className="button small" onClick={() => copyPaymentValue('amount', (paymentIntent.amountPaise / 100).toFixed(2))}>
+                  <Copy size={14} /> {paymentCopied === 'amount' ? 'Amount copied' : 'Copy amount'}
+                </button>
+              </div>
+              <a className="button primary full upi-app-link" href={paymentIntent.upiUri}>
+                <ExternalLink size={16} /> Pay via UPI app
+              </a>
+              <div className="note-strip upi-instructions">
+                <b>How to finish</b>
+                <ol>
+                  <li>Scan this QR on another device, or tap Pay via UPI app.</li>
+                  <li>Check the dairy name, UPI ID, and exact amount before authorizing.</li>
+                  <li>Complete payment in your UPI app, then return here and submit your transaction reference for verification.</li>
+                </ol>
+                <small>If no app opens, copy the UPI ID and amount into your preferred UPI app. This request expires at {new Date(paymentIntent.expiresAt).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' })}; expiry does not mean an external payment failed.</small>
+              </div>
+              {paymentError && <Notice error>{paymentError}</Notice>}
+              <button type="button" className="button full" onClick={submitPaymentDetails}>Submit payment details</button>
+            </div>
+          )}
+        </Modal>
+      )}
+
       {/* Submit Payment Claim Modal */}
       {claimModalOpen && (
         <Modal title={t('customerPortal.claimModalTitle', 'Submit a payment claim')} close={() => setClaimModalOpen(false)}>
           <form onSubmit={submitClaim}>
+            {claimDraft && <Notice>Enter {claimDraft.amount} for bill {payingBill?.month || bills.data?.find(b => b._id === claimDraft.bill_id)?.month}. Your dairy must verify the transaction reference before crediting it.</Notice>}
             <div className="note-strip" style={{ marginBottom: '14px' }}>
               <div style={{ fontSize: '12px', color: 'var(--muted-foreground)', marginBottom: '4px' }}>
                 {t('customerPortal.payToDairy', 'Pay directly to your dairy owner via UPI:')}
@@ -755,7 +884,7 @@ export function CustomerPayments() {
             {bills.data?.some(b => b.closingPaise > 0) && (
               <label className="field">
                 <span>{t('customerPortal.selectBill', 'Allocate to bill (optional)')}</span>
-                <select name="bill_id">
+                <select name="bill_id" defaultValue={claimDraft?.bill_id || ''}>
                   <option value="">{t('customerPortal.oldestDueOption', 'Oldest outstanding bill (default)')}</option>
                   {bills.data.filter(b => b.closingPaise > 0).map(b => (
                     <option key={b._id} value={b._id}>{b.month} — Due: {money(b.closingPaise)}</option>
@@ -764,7 +893,9 @@ export function CustomerPayments() {
               </label>
             )}
 
+            {claimDraft ? <Field label={t('customerPortal.amountPaidLabel', 'Amount paid')} name="amount" type="number" value={claimDraft.amount} readOnly required /> : (
             <Field label={t('customerPortal.amountPaidLabel', 'Amount paid (₹)')} name="amount" type="number" min="0.01" step="0.01" required />
+            )}
             <label className="field">
               <span>{t('payments.paymentMethod', 'Payment method')}</span>
               <select name="method" defaultValue="upi">
@@ -773,7 +904,7 @@ export function CustomerPayments() {
                 <option value="cash">Cash</option>
               </select>
             </label>
-            <Field label={t('customerPortal.referenceLabel', 'UPI UTR / Bank Reference Number')} name="reference" required minLength={3} placeholder="e.g. 202609140012" />
+            <Field label={t('customerPortal.referenceLabel', 'UPI UTR / Bank Reference Number')} name="reference" required minLength={3} maxLength={100} pattern="[A-Za-z0-9][A-Za-z0-9._/-]*" title="Use 3-100 letters, numbers, dots, underscores, slashes, or hyphens." placeholder="e.g. 202609140012" />
             <Field label={t('payments.notes', 'Notes (optional)')} name="notes" placeholder="e.g. Paid via GPay" />
 
             {error && <Notice error>{error}</Notice>}
@@ -842,8 +973,14 @@ export function CustomerPayments() {
               </div>
               {activeReceipt.balanceAfterPaise !== null && (
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '6px', fontSize: '12px', color: 'var(--muted-foreground)' }}>
-                  <span>{t('payments.remainingDue', 'Remaining balance due')}:</span>
+                  <span>Balance immediately after payment:</span>
                   <b>{money(activeReceipt.balanceAfterPaise)}</b>
+                </div>
+              )}
+              {activeReceipt.currentBillBalancePaise !== null && activeReceipt.currentBillBalancePaise !== undefined && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '6px', fontSize: '12px', color: 'var(--muted-foreground)' }}>
+                  <span>Current bill balance:</span>
+                  <b>{money(activeReceipt.currentBillBalancePaise)}</b>
                 </div>
               )}
             </div>

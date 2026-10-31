@@ -26,6 +26,7 @@ export default function Payments() {
 
   const [modal, setModal] = useState(null);
   const [rejectingClaim, setRejectingClaim] = useState(null);
+  const [verifyingClaim, setVerifyingClaim] = useState(null);
   const [reversingPayment, setReversingPayment] = useState(null);
   const [reversingAdjustment, setReversingAdjustment] = useState(null);
   const [adjustmentModal, setAdjustmentModal] = useState(false);
@@ -37,6 +38,7 @@ export default function Payments() {
   const [busy, setBusy] = useState(false);
   const [key, setKey] = useState('');
 
+  const [paymentMethod, setPaymentMethod] = useState('cash');
   // Current-month (till-date) statements for every customer, so a dairy can view
   // and download a bill before the month closes.
   useEffect(() => {
@@ -50,11 +52,12 @@ export default function Payments() {
 
   const open = value => {
     setModal(value);
+    setPaymentMethod('cash');
     setError('');
     setKey('pay-' + Math.floor(Math.random() * 1000000000));
   };
 
-  const pendingClaimsCount = claims.data?.filter(c => c.status === 'pending').length || 0;
+  const pendingClaimsCount = claims.data?.filter(c => ['pending', 'reconciliation_required'].includes(c.status)).length || 0;
 
   async function handleBatchGenerate() {
     if (demo) {
@@ -112,13 +115,18 @@ export default function Payments() {
     setBusy(true);
     setError('');
     try {
-      const res = await api.patch(`/payment-claims/${claimId}/review`, { action, ...(reason ? { reason } : {}) });
+      const res = await api.patch(`/payment-claims/${claimId}/review`, { action, ...(action === 'approve' ? { settlementConfirmed: true } : {}), ...(reason ? { reason } : {}) });
       setRejectingClaim(null);
+      setVerifyingClaim(null);
       claims.reload();
       bills.reload();
       payments.reload();
-      if (action === 'approve') {
-        setNotice(t('payments.claimApprovedNotice', 'Payment claim approved and receipt issued.'));
+      if (res.data.data?.reconciliationRequired) {
+        setNotice('Payment was not applied. The claim now requires reconciliation because the bill balance changed.');
+      } else if (action === 'approve') {
+        setNotice(res.data.data?.replayed
+          ? 'This claim was already approved; the existing receipt was returned without another ledger entry.'
+          : t('payments.claimApprovedNotice', 'Payment claim approved and receipt issued.'));
         if (res.data.data?.payment) {
           viewReceipt(res.data.data.payment._id);
         }
@@ -462,6 +470,7 @@ export default function Payments() {
                     <tr>
                       <th>{t('common.customer', 'Customer')}</th>
                       <th>{t('common.date', 'Date')}</th>
+                      <th>Bill / current balance</th>
                       <th>{t('common.amount', 'Amount')}</th>
                       <th>{t('payments.method', 'Method')}</th>
                       <th>{t('payments.reference', 'Reference (UTR)')}</th>
@@ -475,6 +484,7 @@ export default function Payments() {
                       <tr key={c._id}>
                         <td><b>{c.customerName || 'Customer'}</b></td>
                         <td>{new Date(c.createdAt).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' })}</td>
+                        <td>{c.billMonth || 'Unallocated'}<small style={{ display: 'block' }}>{c.currentBillBalancePaise == null ? '' : money(c.currentBillBalancePaise)}</small></td>
                         <td><b>{money(c.amountPaise)}</b></td>
                         <td className="capitalize">{c.method}</td>
                         <td><code>{c.reference}</code></td>
@@ -486,13 +496,14 @@ export default function Payments() {
                           {c.rejectionReason && <small className="danger-text" style={{ display: 'block' }}>{c.rejectionReason}</small>}
                         </td>
                         <td>
-                          {c.status === 'pending' && (
+                          {c.reconciliationNotes && <small className="danger-text" style={{ display: 'block' }}>{c.reconciliationNotes}</small>}
+                          {['pending', 'reconciliation_required'].includes(c.status) && (
                             <div style={{ display: 'flex', gap: '6px' }}>
                               <button
                                 type="button"
                                 className="button small primary"
                                 disabled={busy}
-                                onClick={() => handleReviewClaim(c._id, 'approve')}
+                                onClick={() => setVerifyingClaim(c)}
                               >
                                 <CheckCircle2 size={14} /> {t('payments.approveClaim', 'Approve')}
                               </button>
@@ -689,6 +700,39 @@ export default function Payments() {
         </section>
       )}
 
+      {verifyingClaim && (
+        <Modal title="Verify received payment" close={() => setVerifyingClaim(null)}>
+          <div className="note-strip">
+            <b>Check the receiving bank or UPI account before approval.</b>
+            <p>This app cannot verify settlement automatically. Confirm that this exact transaction is visible in the dairy account.</p>
+          </div>
+          <dl className="receipt-details">
+            <div><dt>Customer</dt><dd>{verifyingClaim.customerName}</dd></div>
+            <div><dt>Bill</dt><dd>{verifyingClaim.billMonth || 'Unallocated'}</dd></div>
+            <div><dt>Claimed amount</dt><dd>{money(verifyingClaim.amountPaise)}</dd></div>
+            <div><dt>Current bill balance</dt><dd>{verifyingClaim.currentBillBalancePaise == null ? 'Unavailable' : money(verifyingClaim.currentBillBalancePaise)}</dd></div>
+            <div><dt>Method</dt><dd className="capitalize">{verifyingClaim.method}</dd></div>
+            <div><dt>UTR / reference</dt><dd><code>{verifyingClaim.reference}</code></dd></div>
+          </dl>
+          {verifyingClaim.reconciliationNotes && <Notice error>{verifyingClaim.reconciliationNotes}</Notice>}
+          <label className="check-row">
+            <input type="checkbox" required form="verify-payment-claim" />
+            <span>I checked the actual receiving account and confirmed this amount and reference were received.</span>
+          </label>
+          <form id="verify-payment-claim" onSubmit={e => {
+            e.preventDefault();
+            handleReviewClaim(verifyingClaim._id, 'approve');
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '16px' }}>
+              <button type="button" className="button" onClick={() => setVerifyingClaim(null)}>Cancel</button>
+              <button type="submit" className="button primary" disabled={busy}>
+                <CheckCircle2 size={14} /> {busy ? 'Verifying...' : 'Confirm received and approve'}
+              </button>
+            </div>
+          </form>
+        </Modal>
+      )}
+
       {/* Rejection Reason Modal */}
       {rejectingClaim && (
         <Modal title={t('payments.rejectModalTitle', 'Reject payment claim')} close={() => setRejectingClaim(null)}>
@@ -843,13 +887,13 @@ export default function Payments() {
                 <Field label={t('payments.amountReceivedLabel', 'Amount received (₹)')} name="amount" type="number" min="0.01" max={modal.closingPaise / 100} step="0.01" required />
                 <label className="field">
                   <span>{t('payments.paymentMethod', 'Payment method')}</span>
-                  <select name="method">
+                  <select name="method" value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)}>
                     <option value="cash">{t('payments.methodCash', 'Cash')}</option>
                     <option value="upi">{t('payments.methodUpi', 'UPI')}</option>
                     <option value="bank">{t('payments.methodBank', 'Bank transfer')}</option>
                   </select>
                 </label>
-                <Field label={t('payments.referenceLabel', 'Transaction reference (required for UPI / bank)')} name="reference" />
+                <Field label={t('payments.referenceLabel', 'Transaction reference (required for UPI / bank)')} name="reference" required={paymentMethod !== 'cash'} minLength={paymentMethod !== 'cash' ? 3 : undefined} maxLength={100} pattern="[A-Za-z0-9][A-Za-z0-9._/-]*" title="Use letters, numbers, dots, underscores, slashes, or hyphens." />
               </>
             )}
             {error && <Notice error>{error}</Notice>}
@@ -919,8 +963,14 @@ export default function Payments() {
               </div>
               {activeReceipt.balanceAfterPaise !== null && (
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '6px', fontSize: '12px', color: 'var(--muted-foreground)' }}>
-                  <span>{t('payments.remainingDue', 'Remaining balance due')}:</span>
+                  <span>Balance immediately after payment:</span>
                   <b>{money(activeReceipt.balanceAfterPaise)}</b>
+                </div>
+              )}
+              {activeReceipt.currentBillBalancePaise !== null && activeReceipt.currentBillBalancePaise !== undefined && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '6px', fontSize: '12px', color: 'var(--muted-foreground)' }}>
+                  <span>Current bill balance:</span>
+                  <b>{money(activeReceipt.currentBillBalancePaise)}</b>
                 </div>
               )}
             </div>

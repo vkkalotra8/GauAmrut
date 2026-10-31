@@ -996,3 +996,31 @@ dialog.cmdk { padding: 0; overflow: hidden; position: fixed; top: 12vh; left: 0;
   .main-shell { margin-left: 0; width: 100%; }
   body { background: #FFFFFF; color: #000000; }
 }
+
+/* UPI initiation remains a neutral, unverified hand-off to the customer's app. */
+.upi-summary { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 16px; }
+.upi-summary span { display: flex; flex-direction: column; gap: 5px; padding: 12px 14px; background: var(--well-background); border: 1px solid var(--border); border-radius: 10px; color: var(--muted-foreground); font-size: 11px; }
+.upi-summary b { color: var(--foreground); font-size: 15px; }
+.upi-payment { display: flex; flex-direction: column; gap: 14px; }
+.upi-payee { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
+.upi-payee > div { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.upi-payee small, .upi-qr-wrap small { color: var(--muted-foreground); font-size: 10px; text-transform: uppercase; letter-spacing: .08em; }
+.upi-payee b { color: var(--foreground); font-size: 16px; }
+.upi-payee code { overflow-wrap: anywhere; color: var(--secondary-foreground); }
+.upi-qr-wrap { display: grid; grid-template-columns: minmax(180px, 250px) 1fr; align-items: center; gap: 22px; padding: 16px; background: var(--well-background); border: 1px solid var(--border); border-radius: 12px; }
+.upi-qr-wrap img { display: block; width: 100%; aspect-ratio: 1; background: #fff; border: 8px solid #fff; border-radius: 8px; }
+.upi-qr-wrap > div { display: flex; flex-direction: column; gap: 7px; }
+.upi-qr-wrap strong { color: var(--foreground); font-size: 25px; }
+.upi-qr-wrap span { color: var(--muted-foreground); font-size: 12px; }
+.upi-copy-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.upi-copy-grid .button { justify-content: center; }
+.upi-app-link { justify-content: center; text-decoration: none; }
+.upi-instructions b { display: block; margin-bottom: 7px; color: var(--foreground); }
+.upi-instructions ol { margin: 0 0 9px; padding-left: 19px; color: var(--secondary-foreground); font-size: 12px; line-height: 1.65; }
+.upi-instructions small { color: var(--muted-foreground); line-height: 1.6; }
+@media (max-width: 560px) {
+  .upi-summary, .upi-copy-grid { grid-template-columns: 1fr; }
+  .upi-qr-wrap { grid-template-columns: 1fr; text-align: center; }
+  .upi-qr-wrap img { width: min(100%, 280px); margin: 0 auto; }
+  .upi-payee { flex-direction: column; }
+}

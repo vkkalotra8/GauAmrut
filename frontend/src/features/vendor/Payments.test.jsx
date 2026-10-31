@@ -87,9 +87,13 @@ describe('Vendor Bills & Payments feature', () => {
 
     const approveButton = screen.getByRole('button', { name: 'Approve' });
     fireEvent.click(approveButton);
+    expect(screen.getByText(/cannot verify settlement automatically/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('checkbox'));
+    fireEvent.click(screen.getByRole('button', { name: /Confirm received and approve/ }));
+
 
     await waitFor(() => {
-      expect(api.patch).toHaveBeenCalledWith('/payment-claims/cl1/review', { action: 'approve' });
+      expect(api.patch).toHaveBeenCalledWith('/payment-claims/cl1/review', { action: 'approve', settlementConfirmed: true });
     });
   });
 
