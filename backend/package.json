@@ -9,7 +9,11 @@
     "test": "jest --runInBand --forceExit",
     "lint": "eslint src test",
     "seed": "node src/seed.js",
-    "bootstrap:admin": "node src/bootstrap-admin.js"
+    "bootstrap:admin": "node src/bootstrap-admin.js",
+    "migrate": "node src/migration-runner.js",
+    "migrate:check": "node src/migration-runner.js --dry-run",
+    "backup": "node scripts/backup.js",
+    "restore": "node scripts/restore.js"
   },
   "engines": {
     "node": ">=22 <25"
@@ -21,6 +25,7 @@
     "dotenv": "^16.6.1",
     "express": "^4.22.2",
     "express-rate-limit": "^8.1.0",
+    "fontkit": "^2.0.4",
     "helmet": "^8.1.0",
     "joi": "^17.13.3",
     "jsonwebtoken": "^9.0.2",

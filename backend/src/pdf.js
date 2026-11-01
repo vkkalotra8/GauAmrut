@@ -1,7 +1,22 @@
 const path = require('path');
 const PDFDocument = require('pdfkit');
+const fontkit = require('fontkit');
 
 const WATERMARK = 'GauAmrut';
+const PDF_COLORS = Object.freeze({
+  primary: '#2563EB',
+  primaryDark: '#1D4ED8',
+  primarySoft: '#DBEAFE',
+  foreground: '#0F172A',
+  cellForeground: '#334155',
+  mutedForeground: '#5F6B7A',
+  background: '#F8FAFC',
+  border: '#E2E8F0',
+  success: '#15803D',
+  destructive: '#B91C1C',
+  warning: '#A16207',
+  pending: '#7C3AED'
+});
 
 // The core-14 PDF fonts (Helvetica, Times, Courier) only encode WinAnsi text,
 // so a name like "Jay Dwarkadish 💜" or "ગૌ અમૃત" would come out as mojibake or
@@ -24,6 +39,9 @@ const FONT_DEVA_BOLD = path.join(FONT_DIR, 'NotoSansDevanagari-Bold.ttf');
 const FONT_GUJ = path.join(FONT_DIR, 'NotoSansGujarati-Regular.ttf');
 const FONT_GUJ_BOLD = path.join(FONT_DIR, 'NotoSansGujarati-Bold.ttf');
 const FONT_EMOJI = path.join(FONT_DIR, 'NotoEmoji-Regular.ttf');
+const FONT_SYMBOLS = path.join(FONT_DIR, 'NotoSansSymbols-Regular.ttf');
+const FONT_SYMBOLS_2 = path.join(FONT_DIR, 'NotoSansSymbols2-Regular.ttf');
+const FONT_MATH = path.join(FONT_DIR, 'NotoSansMath-Regular.ttf');
 
 // Core-14 face -> the embedded Unicode face used in its place when a string
 // carries characters WinAnsi cannot encode. Bold maps to the bold cut so
@@ -36,7 +54,20 @@ const STD_FONTS = {
   Courier: 'GA-Latin',
   'Courier-Bold': 'GA-Latin-Bold'
 };
-const EMBEDDED_FONTS = ['GA-Latin', 'GA-Latin-Bold', 'GA-Deva', 'GA-Deva-Bold', 'GA-Guj', 'GA-Guj-Bold', 'GA-Emoji'];
+const EMBEDDED_FONTS = ['GA-Latin', 'GA-Latin-Bold', 'GA-Deva', 'GA-Deva-Bold', 'GA-Guj', 'GA-Guj-Bold', 'GA-Symbols', 'GA-Symbols-2', 'GA-Math', 'GA-Emoji'];
+
+const FONT_COVERAGE = {
+  'GA-Latin': fontkit.openSync(FONT_REGULAR),
+  'GA-Latin-Bold': fontkit.openSync(FONT_BOLD),
+  'GA-Deva': fontkit.openSync(FONT_DEVA),
+  'GA-Deva-Bold': fontkit.openSync(FONT_DEVA_BOLD),
+  'GA-Guj': fontkit.openSync(FONT_GUJ),
+  'GA-Guj-Bold': fontkit.openSync(FONT_GUJ_BOLD),
+  'GA-Symbols': fontkit.openSync(FONT_SYMBOLS),
+  'GA-Symbols-2': fontkit.openSync(FONT_SYMBOLS_2),
+  'GA-Math': fontkit.openSync(FONT_MATH),
+  'GA-Emoji': fontkit.openSync(FONT_EMOJI)
+};
 
 // Per-script cuts. Only Devanagari and Gujarati get their own faces because
 // they are the only Indic scripts this product ships (hi / gu); a codepoint
@@ -54,6 +85,9 @@ function registerFonts(doc) {
   doc.registerFont('GA-Deva-Bold', FONT_DEVA_BOLD);
   doc.registerFont('GA-Guj', FONT_GUJ);
   doc.registerFont('GA-Guj-Bold', FONT_GUJ_BOLD);
+  doc.registerFont('GA-Symbols', FONT_SYMBOLS);
+  doc.registerFont('GA-Symbols-2', FONT_SYMBOLS_2);
+  doc.registerFont('GA-Math', FONT_MATH);
   doc.registerFont('GA-Emoji', FONT_EMOJI);
 }
 
@@ -102,34 +136,25 @@ const isGujaratiCp = cp => inRange(cp, 0x0a80, 0x0aff);
 // inherit the previous run's face rather than splitting it (❤ + FE0F stays one
 // emoji run; a ZWJ inside a Gujarati conjunct stays in the Gujarati run).
 const isJoinerCp = cp => cp === 0x200d || (cp >= 0xfe00 && cp <= 0xfe0f);
+const isEmojiModifierCp = cp => cp >= 0x1f3fb && cp <= 0x1f3ff;
 
-// Every codepoint an embedded face can actually draw: WinAnsi text, the Greek,
-// Cyrillic, Latin Extended and punctuation/currency blocks Noto Sans covers, the
-// two Indic scripts we ship, and emoji. Everything else (Tamil, Telugu, Arabic,
-// CJK, ...) has no glyph in any embedded face, so pdfText() drops it instead of
-// printing a tofu box — the same contract the WinAnsi-only path had.
+// Ask the actual bundled fonts instead of maintaining a fragile codepoint
+// allow-list. This keeps symbols and newly added glyphs from being discarded.
+function supports(face, cp) {
+  return Boolean(FONT_COVERAGE[face]?.hasGlyphForCodePoint(cp));
+}
+
 function renderableCp(cp) {
-  return isWinAnsiCp(cp)
-    || isDevanagariCp(cp)
-    || isGujaratiCp(cp)
-    || isEmojiCp(cp)
-    || isJoinerCp(cp)
-    || inRange(cp, 0x0100, 0x024f)   // Latin Extended-A/B
-    || inRange(cp, 0x0370, 0x04ff)   // Greek + Cyrillic
-    || inRange(cp, 0x1e00, 0x1eff)   // Latin Extended Additional
-    || inRange(cp, 0x2000, 0x206f)   // General punctuation
-    || inRange(cp, 0x20a0, 0x20cf);  // Currency symbols (₹)
+  return isJoinerCp(cp) || Object.values(FONT_COVERAGE).some(font => font.hasGlyphForCodePoint(cp));
 }
 
 // Whitespace never needs a glyph: it collapses to a single space below. Only
 // everything else has to be something an embedded face can draw.
 const WHITESPACE = /\s/;
 
-// Normalise a value for what we can draw: collapse runs of whitespace, drop
-// control characters (they have no visual form in a PDF) and codepoints no
-// face covers, then fall back when nothing is left. Emoji, ₹ and Indian
-// scripts are kept — the embedded faces render them, so there is no reason to
-// strip them any more.
+// Normalise a value for what we can draw: collapse whitespace and drop control
+// characters. Unknown printable codepoints become U+FFFD so user data never
+// disappears silently from a generated document.
 function pdfText(value, fallback = '') {
   let drawn = '';
   for (const ch of String(value ?? '')) {
@@ -139,8 +164,8 @@ function pdfText(value, fallback = '') {
     }
     const cp = ch.codePointAt(0);
     if (cp < 0x20 || cp === 0x7f) continue;
-    if (!renderableCp(cp)) continue;
-    drawn += ch;
+    if (renderableCp(cp)) drawn += ch;
+    else if (!isEmojiModifierCp(cp)) drawn += '\uFFFD';
   }
   const cleaned = drawn.replace(/\s+/g, ' ').trim();
   return cleaned || String(fallback || '');
@@ -157,11 +182,27 @@ function isEmojiCp(cp) {
 // scripts to their own Noto cut (bold for bold runs), everything else to the
 // Noto Sans face the caller's core-14 font mapped to.
 function faceFor(cp, baseFont) {
-  if (isEmojiCp(cp)) return 'GA-Emoji';
+  if (isEmojiCp(cp) && supports('GA-Emoji', cp)) return 'GA-Emoji';
   const script = isDevanagariCp(cp) ? 'deva' : isGujaratiCp(cp) ? 'guj' : null;
-  if (!script) return baseFont;
-  const faces = SCRIPT_FACES[script];
-  return baseFont.endsWith('Bold') ? faces.bold : faces.regular;
+  if (script) {
+    const faces = SCRIPT_FACES[script];
+    return baseFont.endsWith('Bold') ? faces.bold : faces.regular;
+  }
+  if (supports(baseFont, cp)) return baseFont;
+  if (supports('GA-Symbols', cp)) return 'GA-Symbols';
+  if (supports('GA-Symbols-2', cp)) return 'GA-Symbols-2';
+  if (supports('GA-Math', cp)) return 'GA-Math';
+  if (supports('GA-Emoji', cp)) return 'GA-Emoji';
+  return baseFont;
+}
+
+function emojiInk(text) {
+  if (/[\u{1F49C}\u{1F7E3}]/u.test(text)) return PDF_COLORS.pending;
+  if (/[\u2764\u{1F9E1}\u{1F534}]/u.test(text)) return PDF_COLORS.destructive;
+  if (/[\u{1F49A}\u{1F7E2}]/u.test(text)) return PDF_COLORS.success;
+  if (/[\u{1F499}\u{1F535}]/u.test(text)) return PDF_COLORS.primary;
+  if (/[\u{1F49B}\u{1F7E1}]/u.test(text)) return PDF_COLORS.warning;
+  return PDF_COLORS.primaryDark;
 }
 
 // Split a string into runs of a single face: { text, font }[]. Consecutive
@@ -196,7 +237,14 @@ function formatInr(paise = 0) {
 function drawRuns(doc, str, baseFont, x, y, options = {}) {
   const runs = splitRuns(str, baseFont);
   if (!runs.length) return doc;
-  if (runs.length === 1) return doc.font(runs[0].font).text(runs[0].text, x, y, options);
+  if (runs.length === 1) {
+    const run = runs[0];
+    if (run.font === 'GA-Emoji') {
+      doc.save().fillColor(emojiInk(run.text)).font(run.font).text(run.text, x, y, options).restore();
+      return doc;
+    }
+    return doc.font(run.font).text(run.text, x, y, options);
+  }
 
   const size = doc._fontSize;
   const widths = runs.map(r => doc.font(r.font).widthOfString(r.text, size));
@@ -252,7 +300,11 @@ function drawRuns(doc, str, baseFont, x, y, options = {}) {
 
   let cursor = startX;
   runs.forEach((run, i) => {
-    doc.font(run.font).text(run.text, cursor, y, runOptions);
+    if (run.font === 'GA-Emoji') {
+      doc.save().fillColor(emojiInk(run.text)).font(run.font).text(run.text, cursor, y, runOptions).restore();
+    } else {
+      doc.font(run.font).text(run.text, cursor, y, runOptions);
+    }
     cursor += widths[i];
   });
   return doc;
@@ -286,18 +338,10 @@ function drawWatermark(doc) {
   const { width, height } = doc.page;
   doc.save();
   doc.rotate(-30, { origin: [width / 2, height / 2] });
-  doc.fillColor('#244d2d').opacity(0.07).font('Helvetica-Bold').fontSize(64);
+  doc.fillColor(PDF_COLORS.primary).opacity(0.06).font('Helvetica-Bold').fontSize(64);
   drawText(doc, WATERMARK, width / 2 - 240, height / 2 - 40, { width: 480, align: 'center', lineBreak: false });
   doc.restore();
   doc.opacity(1);
-}
-
-function watermarkAllPages(doc) {
-  const range = doc.bufferedPageRange();
-  for (let i = range.start; i < range.start + range.count; i++) {
-    doc.switchToPage(i);
-    drawWatermark(doc);
-  }
 }
 
 function generateBillPdf({ bill, milkman, customer, records = [], payments = [] }) {
@@ -320,7 +364,7 @@ function generateBillPdf({ bill, milkman, customer, records = [], payments = [] 
       const customerAddress = pdfText(customer?.address);
 
       // Header Banner — the dairy's name heads the statement.
-      doc.rect(40, 40, 515, 60).fill('#244d2d');
+      doc.rect(40, 40, 515, 60).fill(PDF_COLORS.primary);
       doc.fillColor('#ffffff').fontSize(20).font('Helvetica-Bold');
       drawText(doc, dairyName, 55, 52, { width: 330, height: 24, ellipsis: true });
       doc.fontSize(10).font('Helvetica');
@@ -331,107 +375,113 @@ function generateBillPdf({ bill, milkman, customer, records = [], payments = [] 
       doc.fontSize(9).font('Helvetica');
       drawText(doc, `Generated: ${new Date().toLocaleDateString('en-IN')}`, 400, 72, { align: 'right', width: 140 });
       if (bill.provisional) {
-        doc.fillColor('#b45309').fontSize(8).font('Helvetica-Bold');
+        doc.fillColor(PDF_COLORS.warning).fontSize(8).font('Helvetica-Bold');
         drawText(doc, 'TILL-DATE STATEMENT \u00B7 Month in progress', 55, 90, { width: 330 });
       }
 
       // Dairy & Customer Details
-      doc.fillColor('#1b261e').fontSize(11).font('Helvetica-Bold');
+      doc.fillColor(PDF_COLORS.foreground).fontSize(11).font('Helvetica-Bold');
       drawText(doc, 'Dairy Details', 45, 120);
-      doc.fontSize(9).font('Helvetica').fillColor('#4a5568');
+      doc.fontSize(9).font('Helvetica').fillColor(PDF_COLORS.mutedForeground);
       drawText(doc, dairyName, 45, 136);
       drawText(doc, `Owner: ${ownerName}`, 45, 150);
       if (dairyPhone) drawText(doc, `Phone: ${dairyPhone}`, 45, 164);
       if (dairyUpi) drawText(doc, `UPI: ${dairyUpi}`, 45, 178);
 
-      doc.fillColor('#1b261e').fontSize(11).font('Helvetica-Bold');
+      doc.fillColor(PDF_COLORS.foreground).fontSize(11).font('Helvetica-Bold');
       drawText(doc, 'Billed To', 320, 120);
-      doc.fontSize(9).font('Helvetica').fillColor('#4a5568');
+      doc.fontSize(9).font('Helvetica').fillColor(PDF_COLORS.mutedForeground);
       drawText(doc, customerName, 320, 136);
       if (customerPhone) drawText(doc, `Phone: ${customerPhone}`, 320, 150);
       if (customerAddress) drawText(doc, `Address: ${customerAddress}`, 320, 164, { width: 230 });
 
       // Summary Box
       let y = 205;
-      doc.rect(40, y, 515, 75).fillAndStroke('#f4f7f2', '#d5e2d1');
-      doc.fillColor('#1b261e').fontSize(10).font('Helvetica-Bold');
+      doc.rect(40, y, 515, 75).fillAndStroke(PDF_COLORS.background, PDF_COLORS.border);
+      doc.fillColor(PDF_COLORS.foreground).fontSize(10).font('Helvetica-Bold');
       drawText(doc, 'Opening Balance', 55, y + 14);
       drawText(doc, 'Monthly Charges', 180, y + 14);
       drawText(doc, 'Payments Received', 315, y + 14);
       drawText(doc, 'Net Amount Due', 440, y + 14);
 
-      doc.fontSize(12).font('Helvetica-Bold').fillColor('#244d2d');
+      doc.fontSize(12).font('Helvetica-Bold').fillColor(PDF_COLORS.primaryDark);
       drawText(doc, formatInr(bill.openingPaise), 55, y + 36);
       drawText(doc, formatInr(bill.chargesPaise), 180, y + 36);
-      doc.fillColor('#2e7424');
+      doc.fillColor(PDF_COLORS.success);
       drawText(doc, formatInr(bill.paidPaise), 315, y + 36);
-      doc.fillColor(bill.closingPaise > 0 ? '#b91c1c' : '#2e7424');
+      doc.fillColor(bill.closingPaise > 0 ? PDF_COLORS.destructive : PDF_COLORS.success);
       drawText(doc, formatInr(bill.closingPaise), 440, y + 36);
 
       // Deliveries Section Table
       y = 305;
-      doc.fillColor('#1b261e').fontSize(12).font('Helvetica-Bold');
+      doc.fillColor(PDF_COLORS.foreground).fontSize(12).font('Helvetica-Bold');
       drawText(doc, 'Delivery Breakdown', 45, y);
       y += 20;
 
-      // Table Header
-      doc.rect(40, y, 515, 20).fill('#244d2d');
-      doc.fillColor('#ffffff').fontSize(9).font('Helvetica-Bold');
-      drawText(doc, 'Date', 50, y + 5);
-      drawText(doc, 'Shift', 150, y + 5);
-      drawText(doc, 'Milk Type', 240, y + 5);
-      drawText(doc, 'Qty (L)', 330, y + 5);
-      drawText(doc, 'Rate/L', 410, y + 5);
-      drawText(doc, 'Total', 485, y + 5, { align: 'right', width: 60 });
+      const drawDeliveryHeader = (continued = false) => {
+        if (continued) {
+          doc.fillColor(PDF_COLORS.foreground).fontSize(11).font('Helvetica-Bold');
+          drawText(doc, 'Delivery Breakdown (continued)', 45, y);
+          y += 18;
+        }
+        doc.rect(40, y, 515, 20).fill(PDF_COLORS.primary);
+        doc.fillColor('#ffffff').fontSize(9).font('Helvetica-Bold');
+        drawText(doc, 'Date', 50, y + 5);
+        drawText(doc, 'Shift', 150, y + 5);
+        drawText(doc, 'Milk Type', 240, y + 5);
+        drawText(doc, 'Qty (L)', 330, y + 5);
+        drawText(doc, 'Rate/L', 410, y + 5);
+        drawText(doc, 'Total', 485, y + 5, { align: 'right', width: 60 });
+        y += 20;
+      };
 
-      y += 20;
-      doc.font('Helvetica').fontSize(8).fillColor('#2d3748');
-
-      const maxRecordsOnPage1 = 20;
-      const recordsToDisplay = records.slice(0, maxRecordsOnPage1);
-
-      recordsToDisplay.forEach((r, idx) => {
-        const bg = idx % 2 === 0 ? '#ffffff' : '#f9faf7';
+      drawDeliveryHeader();
+      records.forEach((r, idx) => {
+        if (y + 16 > 760) {
+          doc.addPage();
+          y = 50;
+          drawDeliveryHeader(true);
+        }
+        const bg = idx % 2 === 0 ? '#ffffff' : PDF_COLORS.background;
         doc.rect(40, y, 515, 16).fill(bg);
-        doc.fillColor('#2d3748');
+        doc.fillColor(PDF_COLORS.cellForeground).font('Helvetica').fontSize(8);
         drawText(doc, r.date, 50, y + 4);
-        drawText(doc, r.shift.charAt(0).toUpperCase() + r.shift.slice(1), 150, y + 4);
-        drawText(doc, r.type.charAt(0).toUpperCase() + r.type.slice(1), 240, y + 4);
+        drawText(doc, pdfText(r.shift).replace(/^./, c => c.toUpperCase()), 150, y + 4);
+        drawText(doc, pdfText(r.type).replace(/^./, c => c.toUpperCase()), 240, y + 4);
         drawText(doc, (r.quantityMl / 1000).toFixed(3), 330, y + 4);
         drawText(doc, formatInr(r.ratePaise), 410, y + 4);
         drawText(doc, formatInr(r.totalPaise), 485, y + 4, { align: 'right', width: 60 });
         y += 16;
       });
 
-      if (records.length > maxRecordsOnPage1) {
-        doc.rect(40, y, 515, 16).fill('#f9faf7');
-        doc.fillColor('#718096');
-        drawText(doc, `... and ${records.length - maxRecordsOnPage1} more deliveries (summary included in total above)`, 50, y + 4);
-        y += 16;
-      }
-
       // Payments list if any
       if (payments.length > 0) {
         y += 15;
-        if (y > 700) { doc.addPage(); y = 50; }
-        doc.fillColor('#1b261e').fontSize(11).font('Helvetica-Bold');
-        drawText(doc, 'Payments Credited This Month', 45, y);
-        y += 18;
-
-        doc.rect(40, y, 515, 18).fill('#edf3eb');
-        doc.fillColor('#244d2d').fontSize(8).font('Helvetica-Bold');
-        drawText(doc, 'Receipt #', 50, y + 5);
-        drawText(doc, 'Date', 180, y + 5);
-        drawText(doc, 'Method', 300, y + 5);
-        drawText(doc, 'Reference', 390, y + 5);
-        drawText(doc, 'Amount', 485, y + 5, { align: 'right', width: 60 });
-        y += 18;
-
-        doc.font('Helvetica').fontSize(8).fillColor('#2d3748');
+        const paymentSectionStartHeight = 36 + Math.min(payments.length, 3) * 16;
+        if (y + paymentSectionStartHeight > 760) { doc.addPage(); y = 50; }
+        const drawPaymentHeader = (continued = false) => {
+          doc.fillColor(PDF_COLORS.foreground).fontSize(11).font('Helvetica-Bold');
+          drawText(doc, `Payments Credited This Month${continued ? ' (continued)' : ''}`, 45, y);
+          y += 18;
+          doc.rect(40, y, 515, 18).fill(PDF_COLORS.primarySoft);
+          doc.fillColor(PDF_COLORS.primaryDark).fontSize(8).font('Helvetica-Bold');
+          drawText(doc, 'Receipt #', 50, y + 5);
+          drawText(doc, 'Date', 180, y + 5);
+          drawText(doc, 'Method', 300, y + 5);
+          drawText(doc, 'Reference', 390, y + 5);
+          drawText(doc, 'Amount', 485, y + 5, { align: 'right', width: 60 });
+          y += 18;
+        };
+        drawPaymentHeader();
         payments.forEach((p, idx) => {
-          const bg = idx % 2 === 0 ? '#ffffff' : '#f9faf7';
+          if (y + 16 > 760) {
+            doc.addPage();
+            y = 50;
+            drawPaymentHeader(true);
+          }
+          const bg = idx % 2 === 0 ? '#ffffff' : PDF_COLORS.background;
           doc.rect(40, y, 515, 16).fill(bg);
-          doc.fillColor('#2d3748');
+          doc.fillColor(PDF_COLORS.cellForeground).font('Helvetica').fontSize(8);
           drawText(doc, p.receipt || '-', 50, y + 4);
           drawText(doc, new Date(p.createdAt).toLocaleDateString('en-IN'), 180, y + 4);
           drawText(doc, (p.method || 'UPI').toUpperCase(), 300, y + 4);
@@ -441,13 +491,14 @@ function generateBillPdf({ bill, milkman, customer, records = [], payments = [] 
         });
       }
 
-      // Footer
-      const footerY = 770;
-      doc.rect(40, footerY, 515, 1).fill('#cbd5e0');
-      doc.fontSize(8).fillColor('#718096').font('Helvetica');
-      drawText(doc, 'GauAmrut Platform \u00B7 Thank you for supporting your local fresh milk dairy.', 40, footerY + 8, { align: 'center', width: 515 });
-
-      watermarkAllPages(doc);
+      const range = doc.bufferedPageRange();
+      for (let i = range.start; i < range.start + range.count; i++) {
+        doc.switchToPage(i);
+        doc.rect(40, 778, 515, 1).fill(PDF_COLORS.border);
+        doc.fontSize(8).fillColor(PDF_COLORS.mutedForeground).font('Helvetica');
+        drawText(doc, `GauAmrut Platform \u00B7 Page ${i - range.start + 1} of ${range.count} \u00B7 Thank you for supporting your local dairy.`, 40, 787, { align: 'center', width: 515 });
+        drawWatermark(doc);
+      }
       doc.end();
     } catch (err) {
       reject(err);
@@ -473,7 +524,7 @@ function generateReportPdf({ title, dairyName, period, subtitle = '', columns = 
       let y = 0;
 
       const drawHeader = (continued = false) => {
-        doc.rect(40, 40, 515, 60).fill('#244d2d');
+        doc.rect(40, 40, 515, 60).fill(PDF_COLORS.primary);
         doc.fillColor('#ffffff').fontSize(16).font('Helvetica-Bold');
         drawText(doc, pdfText(dairyName, 'GauAmrut Dairy'), 55, 50, { width: 330, height: 22, ellipsis: true });
         doc.fontSize(10).font('Helvetica');
@@ -487,11 +538,11 @@ function generateReportPdf({ title, dairyName, period, subtitle = '', columns = 
 
         y = 120;
         if (subtitle) {
-          doc.fillColor('#4a5568').fontSize(9).font('Helvetica');
+          doc.fillColor(PDF_COLORS.mutedForeground).fontSize(9).font('Helvetica');
           drawText(doc, subtitle, 45, y, { width: 505 });
           y += 18;
         }
-        doc.rect(40, y, 515, 20).fill('#244d2d');
+        doc.rect(40, y, 515, 20).fill(PDF_COLORS.primary);
         doc.fillColor('#ffffff').fontSize(8.5).font('Helvetica-Bold');
         let x = 48;
         for (const col of columns) {
@@ -508,12 +559,12 @@ function generateReportPdf({ title, dairyName, period, subtitle = '', columns = 
           doc.addPage();
           drawHeader(true);
         }
-        doc.rect(40, y, 515, rowH).fill(idx % 2 === 0 ? '#ffffff' : '#f9faf7');
+        doc.rect(40, y, 515, rowH).fill(idx % 2 === 0 ? '#ffffff' : PDF_COLORS.background);
         let x = 48;
         columns.forEach((col, ci) => {
           const raw = row[ci];
           const cell = typeof raw === 'number' ? String(raw) : pdfText(raw);
-          doc.fillColor('#2d3748').fontSize(8).font('Helvetica');
+          doc.fillColor(PDF_COLORS.cellForeground).fontSize(8).font('Helvetica');
           drawText(doc, cell, x, y + 4, { width: col.width - 8, align: col.align || 'left', height: 10, ellipsis: true });
           x += col.width;
         });
@@ -523,15 +574,15 @@ function generateReportPdf({ title, dairyName, period, subtitle = '', columns = 
       if (summary.length) {
         y += 14;
         if (y + summary.length * 16 > 765) { doc.addPage(); drawHeader(true); }
-        doc.fillColor('#1b261e').fontSize(9.5).font('Helvetica-Bold');
+        doc.fillColor(PDF_COLORS.foreground).fontSize(9.5).font('Helvetica-Bold');
         summary.forEach(line => { drawText(doc, line, 45, y, { width: 505 }); y += 16; });
       }
 
       const range = doc.bufferedPageRange();
       for (let i = range.start; i < range.start + range.count; i++) {
         doc.switchToPage(i);
-        doc.rect(40, 782, 515, 1).fill('#cbd5e0');
-        doc.fillColor('#718096').fontSize(8).font('Helvetica');
+        doc.rect(40, 782, 515, 1).fill(PDF_COLORS.border);
+        doc.fillColor(PDF_COLORS.mutedForeground).fontSize(8).font('Helvetica');
         drawText(doc, `${WATERMARK} \u00B7 Page ${i - range.start + 1} of ${range.count}`, 40, 790, { align: 'center', width: 515 });
         drawWatermark(doc);
       }

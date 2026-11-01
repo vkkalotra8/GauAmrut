@@ -19,13 +19,15 @@ const { generateBillPdf, generateReportPdf, formatInr } = require('./pdf');
 const whatsapp = require('./whatsapp');
 const { platformSettings } = require('./settings');
 const { createPaymentIntent, presentPaymentIntent } = require('./upi');
+const { observeRequests, metricsEndpoint } = require('./observability');
 function createApp(redis) {
   const app = express();
   app.disable('x-powered-by');
   app.set('trust proxy', 1);
   app.use((req, res, next) => { req.requestId = crypto.randomUUID(); res.set('X-Request-Id', req.requestId); next(); });
+  app.use(observeRequests);
   app.use(helmet());
-  const allowed = (process.env.CORS_ORIGINS || 'http://127.0.0.1:5173').split(',');
+  const allowed = (process.env.CORS_ORIGINS || 'http://127.0.0.1:5173').split(',').map(value => value.trim()).filter(Boolean);
   // Development convenience: outside production, also accept dev-server origins
   // whose host is loopback or a private LAN address (LAN IPs change with DHCP, so
   // listing every device address in CORS_ORIGINS is impractical). Public web
@@ -35,6 +37,7 @@ function createApp(redis) {
   app.use(express.json({ limit: '100kb' }));
   const limiter = rateLimit({ windowMs: 15 * 60000, limit: 20, standardHeaders: 'draft-8', legacyHeaders: false, ...(redis ? { store: new RedisStore({ sendCommand: (...args) => redis.sendCommand(args) }) } : {}), message: { error: { code: 'RATE_LIMITED', message: 'Too many attempts. Try again in 15 minutes.' } } });
   app.get('/api/health', (_req, res) => { const ready = mongoose.connection.readyState === 1 && (!redis || redis.isReady); res.status(ready ? 200 : 503).json({ success: ready, data: { status: ready ? 'ready' : 'unavailable', database: mongoose.connection.readyState === 1, redis: redis ? redis.isReady : 'not configured' } }); });
+  app.get('/api/metrics', metricsEndpoint);
   // Public, unauthenticated read of the platform settings every signed-in
   // client consumes (announcement banner, support contact, billing defaults,
   // sign-up availability). Contains no tenant or account data.
@@ -570,7 +573,7 @@ function createApp(redis) {
       const [payment] = await Payment.create([{
         milkman_id: req.tenant, customer_id: claim.customer_id, bill_id: bill._id,
         amountPaise: claim.amountPaise, balanceAfterPaise: bill.closingPaise,
-        method: claim.method, reference: claim.reference,
+        method: claim.method, reference: claim.reference, referenceCanonical: claim.referenceCanonical,
         receipt: 'GA-' + crypto.randomUUID()
       }], { session });
       claim.status = 'approved';

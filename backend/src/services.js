@@ -180,7 +180,7 @@ async function recordPayment(req) {
       amountPaise,
       balanceAfterPaise: targetBill.closingPaise,
       method,
-      ...(reference ? { reference } : {}),
+      ...(reference ? { reference, referenceCanonical: reference.toUpperCase() } : {}),
       receipt
     }], { session });
 

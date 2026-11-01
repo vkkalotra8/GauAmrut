@@ -106,7 +106,7 @@ The API contract is [docs/openapi.json](docs/openapi.json), generated with `node
 
 `frontend/` contains the static React application. `backend/src/` separates validation, authentication, middleware, domain rules, transactional services, and Mongoose repositories/models. `scripts/` contains local setup tools. `docs/` contains the API contract and implementation status.
 
-Vercel: root `frontend`, install `npm ci`, build `npm run build`, output `dist`; set `VITE_API_URL` to the Render HTTPS API URL ending in `/api`. Render: use `render.yaml`, supply MongoDB Atlas replica-set URI, Redis, SMTP, and exact frontend origins. Deployments have not been created or published. CI/branch protection and production environment configuration still require repository/platform setup.
+Vercel: root `frontend`, install `npm ci`, build `npm run build`, output `dist`; set `VITE_API_URL` to the Render HTTPS API URL ending in `/api`. Render: use `render.yaml`, supply MongoDB Atlas replica-set URI, Redis, SMTP, metrics token and exact frontend origins. The deployment template runs controlled migrations before startup; production refuses pending migrations and never creates indexes implicitly. Follow [docs/PRODUCTION_RUNBOOK.md](docs/PRODUCTION_RUNBOOK.md) for backup/restore, monitoring, staging, rollback and account-owner release gates. Deployments and external provider configuration still require the authorized account owner.
 
 Security audit findings required newer Vite, React Router, Vitest, and Nodemailer versions than the SRS baseline. React 18, Express 4/CommonJS, Mongoose, Redux Toolkit, Axios, and Tailwind remain. Installed versions are reproducible through the three lockfiles. Secrets belong only in ignored local `.env` files or hosting environment stores.
 

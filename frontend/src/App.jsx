@@ -28,6 +28,7 @@ import AnnouncementBanner from './components/AnnouncementBanner';
 import ShareToWhatsAppModal from './components/ShareToWhatsApp';
 import ShareReportButton from './components/ShareReportButton';
 import { usePlatformSettings } from './platform';
+import LegalPage, { legalPaths } from './features/legal/LegalPage';
 
 const vendorNav = [
   { to: '/', label: 'Overview', short: 'Overview', icon: LayoutDashboard },
@@ -447,6 +448,7 @@ export default function App() {
     window.addEventListener('online', update); window.addEventListener('offline', update); window.addEventListener('queuechange', refreshQueue); update(); refreshQueue();
     return () => { window.removeEventListener('online', update); window.removeEventListener('offline', update); window.removeEventListener('queuechange', refreshQueue); };
   }, [session.user, session.demo, refreshQueue]);
+  if (legalPaths.includes(location.pathname)) return <LegalPage/>;
   if (!session.user) return <Auth redirectPath={location.pathname}/>;
   if (session.user.role === 'admin') return <AdminPortal logout={logout} error={logoutError}/>;
   const bottomNavigation = visibleNavigation.slice(0, 4);

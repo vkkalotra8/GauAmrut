@@ -14,6 +14,9 @@ reports remain small and keep real, searchable text.
 | `NotoSansDevanagari-Bold.ttf` | `GA-Deva-Bold` | Google Inc. | SIL OFL 1.1 |
 | `NotoSansGujarati-Regular.ttf` | `GA-Guj` | Google Inc. | SIL OFL 1.1 |
 | `NotoSansGujarati-Bold.ttf` | `GA-Guj-Bold` | Google Inc. | SIL OFL 1.1 |
+| `NotoSansSymbols-Regular.ttf` | `GA-Symbols` | The Noto Project Authors | SIL OFL 1.1 |
+| `NotoSansSymbols2-Regular.ttf` | `GA-Symbols-2` | The Noto Project Authors | SIL OFL 1.1 |
+| `NotoSansMath-Regular.ttf` | `GA-Math` | The Noto Project Authors | SIL OFL 1.1 |
 | `NotoEmoji-Regular.ttf` | `GA-Emoji` | Google Inc. | Apache License 2.0 |
 
 Full license texts: `LICENSE-OFL-1.1.txt` (the Noto Sans family) and
@@ -28,6 +31,10 @@ Full license texts: `LICENSE-OFL-1.1.txt` (the Noto Sans family) and
   <https://fonts.google.com/noto/specimen/Noto+Sans+Gujarati>
 - Noto Emoji: <https://github.com/googlefonts/noto-emoji>,
   tag `v2020-09-16-unicode13_1`, file `fonts/NotoEmoji-Regular.ttf`.
+- Noto Sans Symbols and Symbols 2: <https://notofonts.github.io/symbols/>,
+  static unhinted TTF builds. Their checked-in SHA-256 hashes begin with
+  `6eea9cb4` and `c4a0a80f`, respectively.
+- Noto Sans Math: <https://notofonts.github.io/math/>, static full TTF build.
 
 ## Why not the system fonts?
 
@@ -39,9 +46,10 @@ everything this app renders (Latin, `₹`, Devanagari, Gujarati, emoji) under
 licenses that permit bundling — and the six Noto Sans files are smaller than the
 two Nirmala files.
 
-Text in a script with no face here (Tamil, Telugu, Arabic, CJK, ...) has no
-glyph to draw, so `pdfText()` drops those codepoints rather than printing tofu
-boxes. That matches what the WinAnsi-only path did before embedding was added.
+The renderer queries these fonts for each codepoint. Printable text that no
+bundled face supports is represented by U+FFFD instead of being silently
+deleted. Add the relevant open-licensed Noto script face when the product adds
+a new written language; no finite font set covers every Unicode script.
 
 ## Replacing or adding a script
 

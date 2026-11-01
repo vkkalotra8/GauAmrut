@@ -5,7 +5,7 @@ const { MongoMemoryReplSet } = require('mongodb-memory-server');
 const { createApp } = require('../src/app');
 const { User, Milkman, Customer, Bill, Record } = require('../src/models');
 const { createNotification } = require('../src/notifications');
-const { pdfText } = require('../src/pdf');
+const { generateBillPdf, pdfText } = require('../src/pdf');
 const jwt = require('jsonwebtoken');
 
 // Recovers the visible text of a pdfkit document by inflating its content
@@ -241,8 +241,10 @@ describe('New SRS Features Integration Tests', () => {
   });
 
   describe('PDF Generation & Additional CSV Reports', () => {
-    it('keeps emoji, ₹ and Indian scripts in PDF text, dropping only control characters', () => {
+    it('keeps emoji, symbols and supported scripts, replacing unknown printable glyphs visibly', () => {
       expect(pdfText('Jay Dwarkadish 💜')).toBe('Jay Dwarkadish 💜');
+      expect(pdfText('😀 🎉 🚀 ❤️ 💙 💚 💛 💜 👍🏽 👨‍👩‍👧‍👦')).toBe('😀 🎉 🚀 ❤️ 💙 💚 💛 💜 👍 👨‍👩‍👧‍👦');
+      expect(pdfText('© ® ™ € ₹ ± × ÷ √ ∞ ≠ ≤ ≥ → ← ↔ ★ ♫ ☯ ⚛ 🜀')).toBe('© ® ™ € ₹ ± × ÷ √ ∞ ≠ ≤ ≥ → ← ↔ ★ ♫ ☯ ⚛ 🜀');
       expect(pdfText('Café Müller')).toBe('Café Müller');
       expect(pdfText('ગૌ અમૃત')).toBe('ગૌ અમૃત');
       expect(pdfText('  spaced   out  ')).toBe('spaced out');
@@ -250,6 +252,7 @@ describe('New SRS Features Integration Tests', () => {
       expect(pdfText('Milk ₹100 & Co')).toBe('Milk ₹100 & Co'); // ₹ is embedded, not stripped
       expect(pdfText('tab\there')).toBe('tab here');
       expect(pdfText('bell\u0007end')).toBe('bellend'); // no visual form in a PDF
+      expect(pdfText('unknown\u{10FFFF}glyph')).toBe('unknown�glyph');
     });
 
     it('generates PDF invoice buffer for a monthly bill', async () => {
@@ -261,6 +264,31 @@ describe('New SRS Features Integration Tests', () => {
       expect(res.headers['content-type']).toBe('application/pdf');
       expect(res.body).toBeInstanceOf(Buffer);
       expect(res.body.length).toBeGreaterThan(500);
+    });
+
+    it('paginates every monthly delivery row and embeds the purple-heart dairy name', async () => {
+      const records = Array.from({ length: 58 }, (_, idx) => ({
+        date: `ENTRY-${String(idx + 1).padStart(3, '0')}`,
+        shift: idx % 2 ? 'evening' : 'morning',
+        type: idx % 2 ? 'buffalo' : 'cow',
+        quantityMl: 1000,
+        ratePaise: 6000,
+        totalPaise: 6000
+      }));
+      const pdf = await generateBillPdf({
+        bill: { month: '2026-10', openingPaise: 0, chargesPaise: 348000, paidPaise: 0, closingPaise: 348000 },
+        milkman: { businessName: 'Jay Dwarkadhish \u{1F49C}', name: 'Jay', phone: '9876543210' },
+        customer: { name: 'Test Customer' },
+        records,
+        payments: []
+      });
+      const content = pdfContent(pdf);
+
+      expect((pdf.toString('latin1').match(/\/Type \/Page\b/g) || []).length).toBeGreaterThan(1);
+      expect(content).toContain('ENTRY-001');
+      expect(content).toContain('ENTRY-058');
+      expect(content).not.toContain('more deliveries');
+      expect(content).toMatch(/<d83d\s+dc9c>/i);
     });
 
     it('heads the bill PDF with the dairy name, watermarks GauAmrut, and shows the customer name', async () => {

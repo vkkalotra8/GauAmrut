@@ -5,13 +5,19 @@ const { createApp } = require('./app');
 async function start() {
   for (const key of ['MONGO_URI', 'JWT_SECRET', 'CORS_ORIGINS']) if (!process.env[key]) throw new Error(`Missing ${key}`);
   if (process.env.JWT_SECRET.length < 32 || process.env.JWT_SECRET.startsWith('replace-')) throw new Error('Set a random JWT_SECRET of at least 32 characters.');
-  if (process.env.NODE_ENV === 'production' && (!process.env.REDIS_URL || !process.env.SMTP_HOST || process.env.DEV_SHOW_OTP === 'true')) throw new Error('Production requires Redis, SMTP, and disabled development OTP visibility.');
+  const configuredOrigins = process.env.CORS_ORIGINS.split(',').map(value => value.trim()).filter(Boolean);
+  if (configuredOrigins.length === 0) throw new Error('CORS_ORIGINS must contain at least one exact origin.');
+  if (process.env.NODE_ENV === 'production' && configuredOrigins.some(origin => !/^https:\/\/[^/*]+$/i.test(origin))) throw new Error('Production CORS_ORIGINS must contain exact HTTPS origins without paths or wildcards.');
+  if (process.env.NODE_ENV === 'production' && process.env.METRICS_TOKEN?.length < 32) throw new Error('METRICS_TOKEN must be at least 32 characters.');
+  if (process.env.NODE_ENV === 'production' && (!process.env.REDIS_URL || !process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS || !process.env.SMTP_FROM || !process.env.METRICS_TOKEN || process.env.DEV_SHOW_OTP === 'true')) throw new Error('Production requires Redis, complete SMTP credentials, METRICS_TOKEN, and disabled development OTP visibility.');
   const { ensureLocalMongo } = require('./local-mongo');
   const localMongoChild = await ensureLocalMongo();
+  mongoose.set('autoIndex', process.env.NODE_ENV !== 'production');
   await mongoose.connect(process.env.MONGO_URI);
   const hello = await mongoose.connection.db.admin().command({ hello: 1 });
   if (!hello.setName) throw new Error('MongoDB must run as a replica set.');
-  await Promise.all(Object.values(require('./models')).map(m => m.init()));
+  if (process.env.NODE_ENV === 'production') await require('./migration-runner').assertMigrationsCurrent();
+  else await Promise.all(Object.values(require('./models')).map(m => m.init()));
   const redis = process.env.REDIS_URL ? createClient({ url: process.env.REDIS_URL }) : null;
   if (redis) { redis.on('error', () => console.error(JSON.stringify({ event: 'redis_error' }))); await redis.connect(); }
   const port = process.env.PORT || 4000;
@@ -34,13 +40,16 @@ async function start() {
 
   const cron = require('node-cron');
   const { runMonthlyBillingScheduler } = require('./billing-scheduler');
+  const { billingRun } = require('./observability');
   const cronSchedule = process.env.BILLING_CRON_SCHEDULE || '5 0 1 * *';
   const cronJob = cron.schedule(cronSchedule, async () => {
     try {
       console.log(JSON.stringify({ event: 'monthly_billing_cron_triggered', time: new Date().toISOString() }));
       const result = await runMonthlyBillingScheduler();
+      billingRun(false);
       console.log(JSON.stringify({ event: 'monthly_billing_cron_completed', result }));
     } catch (err) {
+      billingRun(true);
       console.error(JSON.stringify({ event: 'monthly_billing_cron_failed', error: err.message }));
     }
   }, { timezone: process.env.APP_TIMEZONE || 'Asia/Kolkata' });

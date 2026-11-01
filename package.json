@@ -10,7 +10,9 @@
     "build": "npm --prefix frontend run build",
     "test": "npm --prefix backend test && npm --prefix frontend test",
     "lint": "npm --prefix backend run lint && npm --prefix frontend run lint",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:contrast": "npm --prefix frontend run test:contrast",
+    "staging:smoke": "node scripts/staging-smoke.cjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.63.0",
