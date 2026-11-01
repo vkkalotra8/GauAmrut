@@ -24,6 +24,24 @@ This runbook is the release gate for public production. Repository automation is
 
 Migration `001-payment-reference-scope` canonicalizes payment references, blocks on same-tenant case-insensitive collisions, removes the legacy global index, and creates `{ milkman_id, referenceCanonical }` uniqueness.
 
+### Migration integrity and staging recovery
+
+- Applied migration files are immutable. Never edit, reformat, rename, delete, or rerun an applied migration.
+- The runner verifies `sha256(migration.up.toString())` against migration history. Any checksum mismatch is a deployment blocker; stop and recover the authoritative source before continuing.
+- Never rewrite migration-history records or add a checksum bypass. Follow-up schema or data changes require a new, forward-only migration.
+- Every migration must keep dry-run write-free. Dry-run may inspect data and report planned work, but must not create collections or indexes, update documents, or insert migration history.
+- Migration `000-ensure-payments-namespace` is the prerequisite for fresh databases. It creates `payments` only when absent and treats only MongoDB `NamespaceExists` / code 48 as a harmless creation race.
+
+For staging recovery:
+
+1. Stop the deployment if an applied checksum differs.
+2. Identify the authoritative Git blob for the applied migration and verify the working file with `git hash-object`.
+3. Verify the runtime checksum with the repository's unchanged `sha256(migration.up.toString())` algorithm.
+4. Confirm the recovered file is byte-for-byte identical, including line endings; do not reconstruct it by hand.
+5. Run focused migration unit tests and the full backend validation suite without connecting to staging.
+6. Take a current staging backup, then run `npm --prefix backend run migrate:check` using authorized staging credentials.
+7. Review the dry-run output. Only after it is clean should an authorized operator run the pending migrations during the maintenance window.
+
 ## 3. Backup, restore and rollback
 
 - Atlas automated snapshots are the primary backup. `npm --prefix backend run backup -- <directory>` creates an additional encrypted-at-rest archive when MongoDB Database Tools are installed and writes a SHA-256 manifest.

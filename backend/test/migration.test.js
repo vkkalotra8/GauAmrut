@@ -9,7 +9,14 @@ function connectionWith(rows, indexes = []) {
     dropIndex: async name => calls.dropped.push(name),
     createIndex: async (keys, options) => calls.created.push({ keys, options })
   };
-  return { connection: { collection: () => collection }, calls };
+  const cursor = { hasNext: async () => true };
+  return {
+    connection: {
+      collection: () => collection,
+      db: { listCollections: () => cursor }
+    },
+    calls
+  };
 }
 
 describe('payment reference migration', () => {
