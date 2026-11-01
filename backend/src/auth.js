@@ -9,7 +9,11 @@ const { User, Milkman, Otp } = require('./models');
 const { AppError } = require('./domain');
 const { wrap, validate, auth } = require('./middleware');
 const schema = require('./validation');
-const { resolveDairy, beginOnboarding, completeOnboarding } = require('./onboarding');
+const {
+  resolveDairy,
+  beginOnboarding,
+  completeOnboarding
+} = require('./onboarding');
 const { platformSettings } = require('./settings');
 
 const normalize = email => email.trim().toLowerCase();
@@ -63,14 +67,14 @@ async function sessionData(user) {
   };
 }
 
-// Send OTP emails using Resend's HTTPS API instead of SMTP.
+// Send OTP emails using Brevo's HTTPS API instead of SMTP.
 async function sendVerificationEmail(email, otp, purpose = 'register') {
-  const { RESEND_API_KEY, RESEND_FROM } = process.env;
+  const { BREVO_API_KEY, BREVO_FROM_EMAIL } = process.env;
 
-  if (!RESEND_API_KEY || !RESEND_FROM) {
+  if (!BREVO_API_KEY || !BREVO_FROM_EMAIL) {
     console.error(JSON.stringify({
       event: 'otp_email_skipped',
-      reason: 'Resend email delivery is not configured'
+      reason: 'Brevo email delivery is not configured'
     }));
 
     throw new AppError(
@@ -110,26 +114,33 @@ async function sendVerificationEmail(email, otp, purpose = 'register') {
   const timeout = setTimeout(() => controller.abort(), 10000);
 
   try {
-    const response = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      signal: controller.signal,
-      headers: {
-        Authorization: `Bearer ${RESEND_API_KEY}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        from: RESEND_FROM,
-        to: [email],
-        subject,
-        text,
-        html
-      })
-    });
+    const response = await fetch(
+      'https://api.brevo.com/v3/smtp/email',
+      {
+        method: 'POST',
+        signal: controller.signal,
+        headers: {
+          'api-key': BREVO_API_KEY,
+          'Content-Type': 'application/json',
+          Accept: 'application/json'
+        },
+        body: JSON.stringify({
+          sender: {
+            name: 'GauAmrut',
+            email: BREVO_FROM_EMAIL
+          },
+          to: [{ email }],
+          subject,
+          textContent: text,
+          htmlContent: html
+        })
+      }
+    );
 
     if (!response.ok) {
       console.error(JSON.stringify({
         event: 'otp_email_failed',
-        provider: 'resend',
+        provider: 'brevo',
         status: response.status
       }));
 
@@ -146,7 +157,7 @@ async function sendVerificationEmail(email, otp, purpose = 'register') {
 
     console.error(JSON.stringify({
       event: 'otp_email_failed',
-      provider: 'resend',
+      provider: 'brevo',
       error: error.name
     }));
 
