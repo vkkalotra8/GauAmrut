@@ -1,17 +1,22 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { NavLink, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Plus, Check, X, Clock, CheckCircle2, MessageSquare, AlertCircle, ShoppingBag, Send, XCircle, Download, Calendar, PauseCircle } from 'lucide-react';
+import { QrCode, Copy, ExternalLink, ShieldCheck } from 'lucide-react';
 import { api, message, money, updateUser, decimalUnits, serviceDate } from '../../lib';
 import useData from '../../hooks/useData';
+import { usePlatformSettings } from '../../platform';
 import { Empty, Field, Heading, Notice, State, Modal } from '../../components/ui';
+import { MilkTrend } from '../../components/charts';
 import { demoProducts, demoOrders, demoDisputes } from '../../demo';
+import ShareToWhatsAppModal from '../../components/ShareToWhatsApp';
+import ShareReportButton from '../../components/ShareReportButton';
 
 export function CustomerHome() {
   const { t } = useTranslation();
   const user = useSelector(s => s.session.user), resource = useData('/dashboard'), profile = useData('/profile');
-  return <><Heading eyebrow={t('records.eyebrow', 'FRESH MILK. A CLEAR ACCOUNT.')} title={`${t('customerPortal.welcome', { name: user.name.split(' ')[0], defaultValue: `Hello, ${user.name.split(' ')[0]}.` })}`} description={`Your deliveries from ${user.businessName}.`}/>{profile.data?.status === 'inactive' && <Notice>Your delivery service is inactive. Your dairy can set your rates and activate it. Your existing records remain available.</Notice>}<State resource={resource}>{resource.data && <><div className="stats-grid"><article className="stat-card"><span>Today’s milk</span><strong>{resource.data.today.quantityMl / 1000} L</strong><small>{resource.data.today.entries} delivery entries</small></article><article className="stat-card"><span>Outstanding bills</span><strong>{money(resource.data.outstandingPaise)}</strong><small>Across finalized months</small></article><article className="stat-card"><span>Paid this month</span><strong>{money(resource.data.collectedPaise)}</strong><small>Recorded by your dairy</small></article></div><section className="card profile-card"><h2>{t('customerPortal.yourMilkLedger', 'Your account, at a glance')}</h2><p className="form-note">{t('customerPortal.quickLook', 'Check each delivery and your finalized monthly bills. Contact your dairy if something needs correcting.')}</p><div className="heading-actions"><NavLink className="button primary" to="/records">{t('nav.deliveryHistory', 'Delivery history')}</NavLink><NavLink className="button" to="/records?tab=adjustments">Vacation & Extra Milk</NavLink><NavLink className="button" to="/payments">{t('nav.payments', 'Bills & payments')}</NavLink></div></section></>}</State></>;
+  return <><Heading eyebrow={t('records.eyebrow', 'FRESH MILK. A CLEAR ACCOUNT.')} title={`${t('customerPortal.welcome', { name: user.name.split(' ')[0], defaultValue: `Hello, ${user.name.split(' ')[0]}.` })}`} description={`Your deliveries from ${user.businessName}.`}/>{profile.data?.status === 'inactive' && <Notice>Your delivery service is inactive. Your dairy can set your rates and activate it. Your existing records remain available.</Notice>}<State resource={resource}>{resource.data && <><div className="stats-grid"><article className="stat-card"><span>Today’s milk</span><strong>{resource.data.today.quantityMl / 1000} L</strong><small>{resource.data.today.entries} delivery entries</small></article><article className="stat-card"><span>Outstanding bills</span><strong>{money(resource.data.outstandingPaise)}</strong><small>For milk delivered till date</small></article><article className="stat-card"><span>Paid this month</span><strong>{money(resource.data.collectedPaise)}</strong><small>Recorded by your dairy</small></article></div>{resource.data.monthly?.length > 1 && <section className="card"><div className="card-heading"><div><h2>{t('customerPortal.monthlyTrendTitle', 'This month’s deliveries')}</h2><p>{t('customerPortal.monthlyTrendSub', 'Your daily milk, day by day')}</p></div></div><MilkTrend monthly={resource.data.monthly} gradientId="milkFillCustomer"/></section>}<section className="card profile-card"><h2>{t('customerPortal.yourMilkLedger', 'Your account, at a glance')}</h2><p className="form-note">{t('customerPortal.quickLook', 'Check each delivery and your finalized monthly bills. Contact your dairy if something needs correcting.')}</p><div className="heading-actions"><NavLink className="button primary" to="/records">{t('nav.deliveryHistory', 'Delivery history')}</NavLink><NavLink className="button" to="/records?tab=adjustments">Vacation & Extra Milk</NavLink><NavLink className="button" to="/payments">{t('nav.payments', 'Bills & payments')}</NavLink></div></section></>}</State></>;
 }
 
 export function CustomerHistory() {
@@ -89,7 +94,7 @@ export function CustomerHistory() {
       <Notice>{notice}</Notice>
 
       {activeVacation && (
-        <div className="notice" style={{ background: '#fef3c7', borderColor: '#fde68a', color: '#92400e', marginBottom: '20px' }}>
+        <div className="notice warn">
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <PauseCircle size={18} />
             <b>Vacation delivery pause currently active:</b> {activeVacation.startDate} to {activeVacation.endDate} ({activeVacation.shift} shift). Daily delivery is paused.
@@ -97,7 +102,7 @@ export function CustomerHistory() {
         </div>
       )}
 
-      <div className="tab-nav" style={{ display: 'flex', gap: '8px', marginBottom: '20px', borderBottom: '1px solid var(--border)', paddingBottom: '8px' }}>
+      <div className="tab-nav">
         <button
           type="button"
           className={`button small ${activeTab === 'history' ? 'primary' : ''}`}
@@ -186,12 +191,8 @@ export function CustomerHistory() {
                       <tr key={adj._id}>
                         <td>
                           <span
-                            className="pill"
-                            style={{
-                              background: adj.type === 'vacation' ? '#fef3c7' : '#ecfdf5',
-                              color: adj.type === 'vacation' ? '#92400e' : '#065f46',
-                              fontWeight: '600'
-                            }}
+                            className={`pill ${adj.type === 'vacation' ? 'pending' : 'success'}`}
+                            style={{ fontWeight: '600' }}
                           >
                             {adj.type === 'vacation' ? 'Vacation pause' : 'Extra milk'}
                           </span>
@@ -202,8 +203,7 @@ export function CustomerHistory() {
                         <td>{adj.reason || '—'}</td>
                         <td>
                           <span
-                            className={`status ${adj.status === 'approved' ? '' : adj.status === 'rejected' || adj.status === 'cancelled' ? 'neutral' : ''}`}
-                            style={adj.status === 'pending' ? { background: '#fef3c7', color: '#92400e' } : {}}
+                            className={`status ${adj.status === 'approved' ? 'success' : adj.status === 'pending' ? 'pending' : 'neutral'}`}
                           >
                             {adj.status}
                           </span>
@@ -212,8 +212,7 @@ export function CustomerHistory() {
                           {adj.status === 'pending' && (
                             <button
                               type="button"
-                              className="text-button"
-                              style={{ color: '#a94d34' }}
+                              className="text-button danger-text"
                               onClick={() => cancelAdjustment(adj._id)}
                             >
                               Cancel
@@ -327,14 +326,70 @@ export function CustomerPayments() {
   const bills = useData(`/bills?page=${page}`), payments = useData(`/payments?page=${paymentPage}`);
   const claims = useData('/payment-claims', []), adjustments = useData('/adjustments', []);
   const profile = useData('/profile');
+  const platform = usePlatformSettings();
   const [claimModalOpen, setClaimModalOpen] = useState(false);
   const [activeReceipt, setActiveReceipt] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [copied, setCopied] = useState(false);
+  const [payingBill, setPayingBill] = useState(null);
+  const [paymentIntent, setPaymentIntent] = useState(null);
+  const [paymentBusy, setPaymentBusy] = useState(false);
+  const [paymentError, setPaymentError] = useState('');
+  const [paymentCopied, setPaymentCopied] = useState('');
+  const [claimDraft, setClaimDraft] = useState(null);
 
   const totalOutstanding = bills.data?.reduce((sum, b) => sum + (b.closingPaise || 0), 0) || 0;
+
+  // Current month is viewable before it closes: fetch the till-date statement so
+  // it can be listed alongside finalized bills (unless a bill already exists).
+  const currentMonth = serviceDate().slice(0, 7);
+  const statement = useData(`/bills/statement?month=${currentMonth}`);
+  const currentBill = bills.data?.find(b => b.month === currentMonth);
+  const currentMonthRow = currentBill || (statement.data && statement.data.month === currentMonth ? statement.data : null);
+
+  function openPayment(bill) {
+    setPayingBill(bill);
+    setPaymentIntent(null);
+    setPaymentError('');
+    setPaymentCopied('');
+  }
+
+  async function initiateUpiPayment(e) {
+    e.preventDefault();
+    setPaymentBusy(true);
+    setPaymentError('');
+    try {
+      const f = Object.fromEntries(new FormData(e.currentTarget));
+      const amountPaise = decimalUnits(f.amount);
+      const key = `upi-${payingBill._id}-${amountPaise}-${Date.now()}`;
+      const res = await api.post('/payment-intents', { bill_id: payingBill._id, amountPaise }, { headers: { 'Idempotency-Key': key } });
+      setPaymentIntent(res.data.data);
+    } catch (err) {
+      setPaymentError(message(err));
+    } finally {
+      setPaymentBusy(false);
+    }
+  }
+
+  async function copyPaymentValue(label, value) {
+    try {
+      await navigator.clipboard.writeText(String(value));
+      setPaymentCopied(label);
+      setTimeout(() => setPaymentCopied(''), 2000);
+    } catch {
+      setPaymentError('Copy is unavailable in this browser. Select the value and copy it manually.');
+    }
+  }
+
+  function submitPaymentDetails() {
+    setClaimDraft({ bill_id: payingBill._id, amount: (paymentIntent.amountPaise / 100).toFixed(2), payment_intent_id: paymentIntent.id });
+    setPayingBill(null);
+    setPaymentIntent(null);
+    setError('');
+    setClaimModalOpen(true);
+  }
 
   async function submitClaim(e) {
     e.preventDefault();
@@ -344,6 +399,7 @@ export function CustomerPayments() {
       const f = Object.fromEntries(new FormData(e.currentTarget));
       await api.post('/payment-claims', {
         bill_id: f.bill_id || undefined,
+        payment_intent_id: claimDraft?.payment_intent_id || undefined,
         amountPaise: decimalUnits(f.amount),
         method: f.method,
         reference: f.reference,
@@ -368,15 +424,33 @@ export function CustomerPayments() {
     }
   }
 
-  async function downloadBillPdf(billId, month) {
+  async function fetchBillPdf(bill) {
+    // A finalized bill downloads by id; the in-progress month uses the statement.
+    const endpoint = bill._id ? `/bills/${bill._id}/pdf` : `/bills/statement.pdf?month=${bill.month}`;
+    const r = await api.get(endpoint, { responseType: 'blob' });
+    return { blob: r.data, filename: `bill-${bill.month}${bill.provisional ? '-till-date' : ''}.pdf` };
+  }
+
+  const [shareBill, setShareBill] = useState(null);
+
+  async function downloadBillPdf(bill) {
     try {
-      const r = await api.get(`/bills/${billId}/pdf`, { responseType: 'blob' });
-      const url = URL.createObjectURL(r.data);
+      const { blob, filename } = await fetchBillPdf(bill);
+      const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `bill-${month}.pdf`;
+      a.download = filename;
       a.click();
       URL.revokeObjectURL(url);
+    } catch (err) {
+      setNotice(message(err));
+    }
+  }
+
+  async function shareBillPdf(bill) {
+    try {
+      const { blob, filename } = await fetchBillPdf(bill);
+      setShareBill({ blob, filename });
     } catch (err) {
       setNotice(message(err));
     }
@@ -408,13 +482,18 @@ export function CustomerPayments() {
         <div className="card-heading">
           <h2>{t('customerPortal.monthlyBillsHeading', 'Monthly bills')}</h2>
           {totalOutstanding > 0 && (
-            <span className="pill" style={{ background: '#fef3c7', color: '#92400e', borderColor: '#fde68a' }}>
+            <span className="pill pending">
               {t('customerPortal.totalDue', 'Total due')}: {money(totalOutstanding)}
             </span>
           )}
         </div>
         <State resource={bills}>
-          {bills.data?.length ? (
+          {(() => {
+            const pastBills = (bills.data || []).filter(b => b.month !== currentMonth);
+            if (!pastBills.length && !currentMonthRow) {
+              return <Empty>{t('customerPortal.noBills', 'No finalized bills yet.')}</Empty>;
+            }
+            return (
             <div className="table-scroll">
               <table>
                 <thead>
@@ -429,7 +508,62 @@ export function CustomerPayments() {
                   </tr>
                 </thead>
                 <tbody>
-                  {bills.data.map(b => (
+                  {currentMonthRow && (
+                    <tr key="current-month">
+                      <td>
+                        <b>{currentMonthRow.month}</b>
+                        {!currentBill && (
+                          <span className="pill pending" style={{ marginLeft: '6px' }}>
+                            {t('payments.tillDate', 'Till date')}
+                          </span>
+                        )}
+                      </td>
+                      <td>{money(currentMonthRow.openingPaise)}</td>
+                      <td>{money(currentMonthRow.chargesPaise)}</td>
+                      <td>{money(currentMonthRow.paidPaise)}</td>
+                      <td><b>{money(currentMonthRow.closingPaise)}</b></td>
+                      <td>
+                        <span className={`status ${currentMonthRow.closingPaise === 0 ? '' : 'pending'}`}>
+                          {currentMonthRow.closingPaise === 0 ? t('payments.paidStatus', 'Settled') : t('payments.dueStatus', 'Payment due')}
+                        </span>
+                      </td>
+                      <td>
+                        {currentMonthRow._id && currentMonthRow.closingPaise > 0 && (
+                          <button type="button" className="button small primary" onClick={() => openPayment(currentMonthRow)}>
+                            <QrCode size={14} /> Pay now
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          className="text-button"
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                          onClick={() => downloadBillPdf(currentMonthRow)}
+                        >
+                          <Download size={14} /> PDF
+                        </button>
+                        <ShareReportButton
+                          fetchReport={() => fetchBillPdf(currentMonthRow)}
+                          shareText="Monthly milk bill — GauAmrut"
+                          className="text-button"
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', marginLeft: '8px' }}
+                          label="Share"
+                          iconSize={14}
+                          busyLabel="Preparing…"
+                          onNotice={setNotice}
+                          onError={setError}
+                        />
+                        <button
+                          type="button"
+                          className="text-button"
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', marginLeft: '8px' }}
+                          onClick={() => shareBillPdf(currentMonthRow)}
+                        >
+                          <Send size={14} /> Send to number
+                        </button>
+                      </td>
+                    </tr>
+                  )}
+                  {pastBills.map(b => (
                     <tr key={b._id}>
                       <td><b>{b.month}</b></td>
                       <td>{money(b.openingPaise)}</td>
@@ -442,13 +576,37 @@ export function CustomerPayments() {
                         </span>
                       </td>
                       <td>
+                        {b.closingPaise > 0 && (
+                          <button type="button" className="button small primary" onClick={() => openPayment(b)}>
+                            <QrCode size={14} /> Pay now
+                          </button>
+                        )}
                         <button
                           type="button"
                           className="text-button"
                           style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}
-                          onClick={() => downloadBillPdf(b._id, b.month)}
+                          onClick={() => downloadBillPdf(b)}
                         >
                           <Download size={14} /> PDF
+                        </button>
+                        <ShareReportButton
+                          fetchReport={() => fetchBillPdf(b)}
+                          shareText="Monthly milk bill — GauAmrut"
+                          className="text-button"
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', marginLeft: '8px' }}
+                          label="Share"
+                          iconSize={14}
+                          busyLabel="Preparing…"
+                          onNotice={setNotice}
+                          onError={setError}
+                        />
+                        <button
+                          type="button"
+                          className="text-button"
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', marginLeft: '8px' }}
+                          onClick={() => shareBillPdf(b)}
+                        >
+                          <Send size={14} /> Send to number
                         </button>
                       </td>
                     </tr>
@@ -456,10 +614,10 @@ export function CustomerPayments() {
                 </tbody>
               </table>
             </div>
-          ) : (
-            <Empty>{t('customerPortal.noBills', 'No finalized bills yet.')}</Empty>
-          )}
+            );
+          })()}
         </State>
+        {platform?.invoice?.footer && <p className="invoice-footer-note">{platform.invoice.footer}</p>}
         <Pager page={page} setPage={setPage} total={bills.meta?.total || 0} />
       </section>
 
@@ -492,11 +650,11 @@ export function CustomerPayments() {
                       <td><code>{c.reference}</code></td>
                       <td>{c.notes || '—'}</td>
                       <td>
-                        <span className={`status ${c.status === 'approved' ? '' : c.status === 'rejected' ? 'neutral' : ''}`} style={c.status === 'pending' ? { background: '#fef3c7', color: '#92400e' } : {}}>
+                        <span className={`status ${c.status === 'approved' ? 'success' : c.status === 'rejected' ? 'danger' : 'pending'}`}>
                           {c.status}
                         </span>
                         {c.rejectionReason && (
-                          <small style={{ display: 'block', color: '#b91c1c', marginTop: '2px' }}>
+                          <small className="danger-text" style={{ display: 'block', marginTop: '2px' }}>
                             {c.rejectionReason}
                           </small>
                         )}
@@ -534,31 +692,31 @@ export function CustomerPayments() {
                 </thead>
                 <tbody>
                   {adjustments.data.map(adj => {
-                    const typeStyles = {
-                      credit: { bg: '#ecfdf5', text: '#065f46', border: '#a7f3d0' },
-                      waiver: { bg: '#f0fdfa', text: '#0f766e', border: '#99f6e4' },
-                      debit: { bg: '#fffbeb', text: '#92400e', border: '#fde68a' },
-                      refund: { bg: '#eff6ff', text: '#1d4ed8', border: '#bfdbfe' }
-                    }[adj.type] || { bg: '#f3f4f6', text: '#374151', border: '#e5e7eb' };
+                    const typeClass = {
+                      credit: 'success',
+                      waiver: 'info',
+                      debit: 'pending',
+                      refund: 'info'
+                    }[adj.type] || 'neutral';
 
                     return (
                       <tr key={adj._id}>
                         <td>{new Date(adj.createdAt).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' })}</td>
                         <td>
-                          <span className="pill" style={{ background: typeStyles.bg, color: typeStyles.text, borderColor: typeStyles.border, textTransform: 'capitalize', fontWeight: '600', fontSize: '11px' }}>
+                          <span className={`pill ${typeClass}`} style={{ textTransform: 'capitalize', fontWeight: '600', fontSize: '11px' }}>
                             {adj.type}
                           </span>
                         </td>
                         <td>
-                          <b style={{ color: adj.type === 'debit' || adj.type === 'refund' ? '#b91c1c' : 'var(--primary)' }}>
+                          <b style={{ color: adj.type === 'debit' || adj.type === 'refund' ? 'var(--destructive-soft-foreground)' : 'var(--success-foreground)' }}>
                             {adj.type === 'debit' || adj.type === 'refund' ? '+' : '-'}{money(adj.amountPaise)}
                           </b>
                         </td>
                         <td>{adj.reason}</td>
-                        <td>{adj.billMonth ? <code>{adj.billMonth}</code> : <span style={{ color: 'var(--muted)' }}>Account</span>}</td>
+                        <td>{adj.billMonth ? <code>{adj.billMonth}</code> : <span style={{ color: 'var(--muted-foreground)' }}>Account</span>}</td>
                         <td>
                           {adj.status === 'reversed' ? (
-                            <span className="status neutral" style={{ background: '#fef2f2', color: '#991b1b', borderColor: '#fecaca' }}>
+                            <span className="status danger">
                               {t('payments.reversedBadge', 'Reversed')}
                             </span>
                           ) : (
@@ -606,11 +764,11 @@ export function CustomerPayments() {
                       <td>
                         {p.reversed ? (
                           <div>
-                            <span className="status neutral" style={{ background: '#fef2f2', color: '#991b1b', borderColor: '#fecaca' }}>
+                            <span className="status danger">
                               {t('payments.reversedBadge', 'Reversed')}
                             </span>
                             {p.reversalReason && (
-                              <small style={{ display: 'block', color: '#991b1b', fontSize: '11px', marginTop: '2px' }}>
+                              <small className="danger-text" style={{ display: 'block', fontSize: '11px', marginTop: '2px' }}>
                                 {p.reversalReason}
                               </small>
                             )}
@@ -636,12 +794,81 @@ export function CustomerPayments() {
         <Pager page={paymentPage} setPage={setPaymentPage} total={payments.meta?.total || 0} />
       </section>
 
+      {payingBill && (
+        <Modal title="Pay with UPI" close={() => { setPayingBill(null); setPaymentIntent(null); setPaymentError(''); }}>
+          {!paymentIntent ? (
+            <form onSubmit={initiateUpiPayment}>
+              <div className="upi-summary">
+                <span>Bill month <b>{payingBill.month}</b></span>
+                <span>Outstanding balance <b>{money(payingBill.closingPaise)}</b></span>
+              </div>
+              <Field
+                label="Amount to pay (?)"
+                name="amount"
+                type="number"
+                min="0.01"
+                max={(payingBill.closingPaise / 100).toFixed(2)}
+                step="0.01"
+                defaultValue={(payingBill.closingPaise / 100).toFixed(2)}
+                required
+                autoFocus
+              />
+              <Notice>
+                Opening a UPI app does not confirm payment. Your dairy will credit the payment only after checking its receiving bank account.
+              </Notice>
+              {paymentError && <Notice error>{paymentError}</Notice>}
+              <button type="submit" className="button primary full" disabled={paymentBusy}>
+                <QrCode size={16} /> {paymentBusy ? 'Preparing secure QR.' : 'Generate UPI QR'}
+              </button>
+            </form>
+          ) : (
+            <div className="upi-payment">
+              <div className="upi-payee">
+                <div><small>Pay to</small><b>{paymentIntent.payee.name}</b><code>{paymentIntent.payee.upiId}</code></div>
+                <span className="status pending"><ShieldCheck size={13} /> Verification required</span>
+              </div>
+              <div className="upi-qr-wrap">
+                <img src={paymentIntent.qrDataUrl} alt={`UPI payment QR for ${paymentIntent.payee.name}`} />
+                <div>
+                  <small>Exact amount</small>
+                  <strong>{money(paymentIntent.amountPaise)}</strong>
+                  <span>Bill {payingBill.month}</span>
+                </div>
+              </div>
+              <div className="upi-copy-grid">
+                <button type="button" className="button small" onClick={() => copyPaymentValue('upi', paymentIntent.payee.upiId)}>
+                  <Copy size={14} /> {paymentCopied === 'upi' ? 'UPI ID copied' : 'Copy UPI ID'}
+                </button>
+                <button type="button" className="button small" onClick={() => copyPaymentValue('amount', (paymentIntent.amountPaise / 100).toFixed(2))}>
+                  <Copy size={14} /> {paymentCopied === 'amount' ? 'Amount copied' : 'Copy amount'}
+                </button>
+              </div>
+              <a className="button primary full upi-app-link" href={paymentIntent.upiUri}>
+                <ExternalLink size={16} /> Pay via UPI app
+              </a>
+              <div className="note-strip upi-instructions">
+                <b>How to finish</b>
+                <ol>
+                  <li>Scan this QR on another device, or tap Pay via UPI app.</li>
+                  <li>Check the dairy name, UPI ID, and exact amount before authorizing.</li>
+                  <li>Complete payment in your UPI app, then return here and submit your transaction reference for verification.</li>
+                </ol>
+                <small>If no app opens, copy the UPI ID and amount into your preferred UPI app. This request expires at {new Date(paymentIntent.expiresAt).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' })}; expiry does not mean an external payment failed.</small>
+              </div>
+              {paymentError && <Notice error>{paymentError}</Notice>}
+              <button type="button" className="button full" onClick={submitPaymentDetails}>Submit payment details</button>
+            </div>
+          )}
+        </Modal>
+      )}
+
       {/* Submit Payment Claim Modal */}
       {claimModalOpen && (
         <Modal title={t('customerPortal.claimModalTitle', 'Submit a payment claim')} close={() => setClaimModalOpen(false)}>
           <form onSubmit={submitClaim}>
-            <div style={{ background: '#f8fafc', padding: '12px 14px', borderRadius: '8px', marginBottom: '14px', border: '1px solid var(--border)' }}>
-              <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '4px' }}>
+            {claimDraft && <Notice>Enter {claimDraft.amount} for bill {payingBill?.month || bills.data?.find(b => b._id === claimDraft.bill_id)?.month}. Your dairy must verify the transaction reference before crediting it.</Notice>}
+            <div className="note-strip" style={{ marginBottom: '14px' }}>
+              <div style={{ fontSize: '12px', color: 'var(--muted-foreground)', marginBottom: '4px' }}>
                 {t('customerPortal.payToDairy', 'Pay directly to your dairy owner via UPI:')}
               </div>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
@@ -657,7 +884,7 @@ export function CustomerPayments() {
             {bills.data?.some(b => b.closingPaise > 0) && (
               <label className="field">
                 <span>{t('customerPortal.selectBill', 'Allocate to bill (optional)')}</span>
-                <select name="bill_id">
+                <select name="bill_id" defaultValue={claimDraft?.bill_id || ''}>
                   <option value="">{t('customerPortal.oldestDueOption', 'Oldest outstanding bill (default)')}</option>
                   {bills.data.filter(b => b.closingPaise > 0).map(b => (
                     <option key={b._id} value={b._id}>{b.month} — Due: {money(b.closingPaise)}</option>
@@ -666,7 +893,9 @@ export function CustomerPayments() {
               </label>
             )}
 
+            {claimDraft ? <Field label={t('customerPortal.amountPaidLabel', 'Amount paid')} name="amount" type="number" value={claimDraft.amount} readOnly required /> : (
             <Field label={t('customerPortal.amountPaidLabel', 'Amount paid (₹)')} name="amount" type="number" min="0.01" step="0.01" required />
+            )}
             <label className="field">
               <span>{t('payments.paymentMethod', 'Payment method')}</span>
               <select name="method" defaultValue="upi">
@@ -675,7 +904,7 @@ export function CustomerPayments() {
                 <option value="cash">Cash</option>
               </select>
             </label>
-            <Field label={t('customerPortal.referenceLabel', 'UPI UTR / Bank Reference Number')} name="reference" required minLength={3} placeholder="e.g. 202609140012" />
+            <Field label={t('customerPortal.referenceLabel', 'UPI UTR / Bank Reference Number')} name="reference" required minLength={3} maxLength={100} pattern="[A-Za-z0-9][A-Za-z0-9._/-]*" title="Use 3-100 letters, numbers, dots, underscores, slashes, or hyphens." placeholder="e.g. 202609140012" />
             <Field label={t('payments.notes', 'Notes (optional)')} name="notes" placeholder="e.g. Paid via GPay" />
 
             {error && <Notice error>{error}</Notice>}
@@ -695,33 +924,33 @@ export function CustomerPayments() {
       {/* Customer Receipt Modal */}
       {activeReceipt && (
         <Modal title={t('payments.receiptTitle', 'Payment Receipt')} close={() => setActiveReceipt(null)}>
-          <div className="receipt-card" style={{ padding: '20px', border: '1px solid var(--border)', borderRadius: '12px', background: '#fdfdfd' }}>
+          <div className="receipt-card">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '1px dashed var(--border)', paddingBottom: '14px', marginBottom: '14px' }}>
               <div>
-                <b style={{ fontSize: '18px', color: 'var(--primary)' }}>{activeReceipt.dairy?.businessName}</b>
-                <div style={{ fontSize: '12px', color: 'var(--muted)' }}>{activeReceipt.dairy?.ownerName} · {activeReceipt.dairy?.phone}</div>
-                {activeReceipt.dairy?.upiId && <div style={{ fontSize: '12px', color: 'var(--muted)' }}>UPI: {activeReceipt.dairy.upiId}</div>}
+                <b style={{ fontSize: '18px', color: 'var(--success-foreground)' }}>{activeReceipt.dairy?.businessName}</b>
+                <div style={{ fontSize: '12px', color: 'var(--muted-foreground)' }}>{activeReceipt.dairy?.ownerName} · {activeReceipt.dairy?.phone}</div>
+                {activeReceipt.dairy?.upiId && <div style={{ fontSize: '12px', color: 'var(--muted-foreground)' }}>UPI: {activeReceipt.dairy.upiId}</div>}
               </div>
               <div style={{ textAlign: 'right' }}>
-                <span className="pill" style={{ background: '#ecfdf5', color: '#065f46', borderColor: '#a7f3d0' }}>
+                <span className="pill success">
                   ✓ {t('payments.verifiedReceipt', 'VERIFIED RECEIPT')}
                 </span>
-                <div style={{ fontSize: '11px', color: 'var(--muted)', marginTop: '4px' }}><code>{activeReceipt.receipt}</code></div>
+                <div style={{ fontSize: '11px', color: 'var(--muted-foreground)', marginTop: '4px' }}><code>{activeReceipt.receipt}</code></div>
               </div>
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', fontSize: '13px', marginBottom: '16px' }}>
               <div>
-                <span style={{ color: 'var(--muted)', display: 'block', fontSize: '11px' }}>{t('common.customer', 'Customer')}</span>
+                <span style={{ color: 'var(--muted-foreground)', display: 'block', fontSize: '11px' }}>{t('common.customer', 'Customer')}</span>
                 <b>{activeReceipt.customer?.name}</b>
               </div>
               <div>
-                <span style={{ color: 'var(--muted)', display: 'block', fontSize: '11px' }}>{t('common.date', 'Payment Date')}</span>
+                <span style={{ color: 'var(--muted-foreground)', display: 'block', fontSize: '11px' }}>{t('common.date', 'Payment Date')}</span>
                 <b>{new Date(activeReceipt.date).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}</b>
               </div>
             </div>
 
-            <div style={{ background: '#f8fafc', padding: '12px 16px', borderRadius: '8px', marginBottom: '16px' }}>
+            <div className="note-strip" style={{ marginBottom: '16px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
                 <span>{t('payments.method', 'Payment Method')}:</span>
                 <b className="capitalize">{activeReceipt.method}</b>
@@ -743,15 +972,21 @@ export function CustomerPayments() {
                 <span style={{ fontSize: '18px', fontWeight: '700', color: 'var(--primary)' }}>{money(activeReceipt.amountPaise)}</span>
               </div>
               {activeReceipt.balanceAfterPaise !== null && (
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '6px', fontSize: '12px', color: 'var(--muted)' }}>
-                  <span>{t('payments.remainingDue', 'Remaining balance due')}:</span>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '6px', fontSize: '12px', color: 'var(--muted-foreground)' }}>
+                  <span>Balance immediately after payment:</span>
                   <b>{money(activeReceipt.balanceAfterPaise)}</b>
+                </div>
+              )}
+              {activeReceipt.currentBillBalancePaise !== null && activeReceipt.currentBillBalancePaise !== undefined && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '6px', fontSize: '12px', color: 'var(--muted-foreground)' }}>
+                  <span>Current bill balance:</span>
+                  <b>{money(activeReceipt.currentBillBalancePaise)}</b>
                 </div>
               )}
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <small style={{ color: 'var(--muted)', fontSize: '11px' }}>
+              <small style={{ color: 'var(--muted-foreground)', fontSize: '11px' }}>
                 {t('payments.receiptFootnote', 'Digital receipt generated by GauAmrut Platform.')}
               </small>
               <button type="button" className="button small" onClick={() => window.print()}>
@@ -761,13 +996,81 @@ export function CustomerPayments() {
           </div>
         </Modal>
       )}
+
+      {shareBill && (
+        <ShareToWhatsAppModal
+          fileName={shareBill.filename}
+          blob={shareBill.blob}
+          caption={`Monthly milk bill (${shareBill.filename.replace('bill-', '').replace('.pdf', '')})`}
+          close={() => setShareBill(null)}
+          onSent={() => setNotice('Bill PDF sent to WhatsApp.')}
+        />
+      )}
     </>
   );
 }
 
+function VerifyContactModal({ channel, close, reload }) {
+  const { t } = useTranslation();
+  const [step, setStep] = useState('intro'), [busy, setBusy] = useState(false), [error, setError] = useState(''), [devOtp, setDevOtp] = useState('');
+  const isPhone = channel === 'phone';
+  async function sendCode() {
+    setBusy(true);
+    setError('');
+    try {
+      const { data } = await api.post('/profile/verification/request', { channel });
+      setDevOtp(data.data.developmentOtp || '');
+      setStep('code');
+    } catch (err) {
+      setError(message(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function confirm(e) {
+    e.preventDefault();
+    setBusy(true);
+    setError('');
+    try {
+      const otp = new FormData(e.currentTarget).get('otp');
+      await api.post('/profile/verification/confirm', { channel, otp });
+      close();
+      reload();
+    } catch (err) {
+      setError(message(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+  return <Modal title={isPhone ? t('customerPortal.verifyMobileTitle', 'Verify mobile number') : t('customerPortal.verifyEmailTitle', 'Verify email')} close={close}>
+    {step === 'intro' ? <>
+      <p className="form-note">{isPhone
+        ? t('customerPortal.verifyPhoneIntro', 'We will send a 6-digit code to your mobile number on WhatsApp. Enter it on this page to prove the number is yours.')
+        : t('customerPortal.verifyEmailIntro', 'We will email a 6-digit code to your registered email address. Enter it on this page to confirm it.')}</p>
+      {error && <Notice error>{error}</Notice>}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '16px' }}>
+        <button type="button" className="button" onClick={close}>{t('common.cancel', 'Cancel')}</button>
+        <button type="button" className="button primary" disabled={busy} onClick={sendCode}>{busy ? t('common.loading', 'Sending…') : t('customerPortal.sendCode', 'Send code')}</button>
+      </div>
+    </> : <form onSubmit={confirm}>
+      <p className="form-note">{isPhone
+        ? t('customerPortal.codeSentPhone', 'A 6-digit code was sent to your mobile number on WhatsApp. Enter it below.')
+        : t('customerPortal.codeSentEmail', 'A 6-digit code was emailed to your registered email address. Enter it below.')}</p>
+      {devOtp && <Notice>Development code: <b>{devOtp}</b></Notice>}
+      <Field label={t('customerPortal.enterCode', '6-digit code')} name="otp" inputMode="numeric" pattern="\d{6}" maxLength={6} required autoFocus/>
+      {error && <Notice error>{error}</Notice>}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '16px' }}>
+        <button type="button" className="button" onClick={() => { setStep('intro'); setError(''); }}>{t('common.cancel', 'Cancel')}</button>
+        <button type="submit" className="button primary" disabled={busy}>{busy ? t('common.saving', 'Saving…') : t('customerPortal.verifyNow', 'Verify')}</button>
+      </div>
+    </form>}
+  </Modal>;
+}
+
 export function CustomerProfile() {
   const { t, i18n } = useTranslation();
-  const resource = useData('/profile'), dispatch = useDispatch(), [notice, setNotice] = useState(''), [error, setError] = useState(''), [busy, setBusy] = useState(false);
+  const resource = useData('/profile'), dispatch = useDispatch(), [notice, setNotice] = useState(''), [error, setError] = useState(''), [busy, setBusy] = useState(false), [verifyChannel, setVerifyChannel] = useState(null);
+  const platform = usePlatformSettings();
   async function save(e) {
     e.preventDefault();
     setBusy(true);
@@ -787,7 +1090,7 @@ export function CustomerProfile() {
       setBusy(false);
     }
   }
-  return <><Heading title={t('customerPortal.profileTitle', 'Your profile')} description={t('customerPortal.profileDescription', 'Keep your name, delivery address, and language preference up to date.')}/><Notice>{notice}</Notice><Notice error>{error}</Notice><State resource={resource}>{resource.data && <section className="card profile-card"><form onSubmit={save} key={resource.data.updatedAt}><Field label="Your name" name="name" defaultValue={resource.data.name} minLength={2} required/><Field label="Delivery address" name="address" defaultValue={resource.data.address}/><label className="field"><span>{t('customerPortal.preferredLanguage', 'Preferred language')}</span><select name="language" defaultValue={resource.data.language || i18n.language}><option value="en">English</option><option value="hi">हिन्दी (Hindi)</option><option value="gu">ગુજરાતી (Gujarati)</option></select></label><p className="form-note">Verified email: {resource.data.email}<br/>Cow milk: {money(resource.data.cowRatePaise)} / L · Buffalo milk: {money(resource.data.buffaloRatePaise)} / L<br/>Service: {resource.data.status}</p><button className="button primary" disabled={busy}>{busy ? t('common.saving', 'Saving…') : t('customerPortal.saveProfile', 'Save profile')}</button></form></section>}</State></>;
+  return <><Heading title={t('customerPortal.profileTitle', 'Your profile')} description={t('customerPortal.profileDescription', 'Keep your name, delivery address, and language preference up to date.')}/><Notice>{notice}</Notice><Notice error>{error}</Notice><State resource={resource}>{resource.data && <section className="card profile-card"><form onSubmit={save} key={resource.data.updatedAt}><Field label="Your name" name="name" defaultValue={resource.data.name} minLength={2} required/><Field label="Delivery address" name="address" defaultValue={resource.data.address}/><label className="field"><span>{t('customerPortal.preferredLanguage', 'Preferred language')}</span><select name="language" defaultValue={resource.data.language || i18n.language}><option value="en">English</option><option value="hi">हिन्दी (Hindi)</option><option value="gu">ગુજરાતી (Gujarati)</option></select></label><div className="verify-list"><div className="verify-row"><span><b>{t('customerPortal.contactEmail', 'Email')}</b> · {resource.data.email || t('customerPortal.noEmailOnRecord', 'no email on record')}</span>{resource.data.emailVerifiedAt ? <span className="status"><Check size={13}/> {t('customerPortal.verified', 'Verified')}</span> : resource.data.email && <button type="button" className="text-button" onClick={() => setVerifyChannel('email')}>{t('customerPortal.verifyEmailCta', 'Verify email')}</button>}</div><div className="verify-row"><span><b>{t('customerPortal.contactMobile', 'Mobile number')}</b> · {resource.data.phone || t('customerPortal.noMobileOnRecord', 'ask your dairy to add your number')}</span>{resource.data.phoneVerifiedAt ? <span className="status"><Check size={13}/> {t('customerPortal.verified', 'Verified')}</span> : resource.data.phone && <button type="button" className="text-button" onClick={() => setVerifyChannel('phone')}>{t('customerPortal.verifyMobileCta', 'Verify mobile number')}</button>}</div></div><p className="form-note">Cow milk: {money(resource.data.cowRatePaise)} / L · Buffalo milk: {money(resource.data.buffaloRatePaise)} / L<br/>Service: {resource.data.status}</p>{(platform?.support?.email || platform?.support?.phone) && <p className="form-note">Platform support: {[platform.support.email, platform.support.phone].filter(Boolean).join(' · ')}</p>}<button className="button primary" disabled={busy}>{busy ? t('common.saving', 'Saving…') : t('customerPortal.saveProfile', 'Save profile')}</button></form></section>}</State>{verifyChannel && resource.data && <VerifyContactModal channel={verifyChannel} close={() => setVerifyChannel(null)} reload={resource.reload}/>}</>;
 }
 
 export function CustomerOrders() {
@@ -975,7 +1278,7 @@ export function CustomerOrders() {
                     border: '1px solid var(--border)',
                     borderRadius: '10px',
                     padding: '16px 18px',
-                    background: '#fff'
+                    background: 'var(--card)'
                   }}
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', marginBottom: '10px' }}>
@@ -986,19 +1289,8 @@ export function CustomerOrders() {
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                       <span
-                        className="status"
-                        style={{
-                          background:
-                            ord.status === 'fulfilled' ? '#e9f5e8' :
-                            ord.status === 'confirmed' ? '#e8edf8' :
-                            ord.status === 'cancelled' ? '#faeaea' : '#fcf5e7',
-                          color:
-                            ord.status === 'fulfilled' ? '#2e7424' :
-                            ord.status === 'confirmed' ? '#28559a' :
-                            ord.status === 'cancelled' ? '#9a2828' : '#8c6b16',
-                          borderColor: 'currentColor',
-                          fontWeight: '600'
-                        }}
+                        className={`status ${ord.status === 'fulfilled' ? 'success' : ord.status === 'confirmed' ? 'info' : ord.status === 'cancelled' ? 'danger' : 'pending'}`}
+                        style={{ fontWeight: '600' }}
                       >
                         {ord.status === 'fulfilled' && <CheckCircle2 size={12} />}
                         {ord.status === 'confirmed' && <Check size={12} />}
@@ -1010,8 +1302,7 @@ export function CustomerOrders() {
                       {ord.status === 'placed' && (
                         <button
                           type="button"
-                          className="button small"
-                          style={{ color: '#a94d34', borderColor: '#f4d9cf' }}
+                          className="button small danger-ghost"
                           onClick={() => setCancellingOrder(ord)}
                           disabled={busy}
                         >
@@ -1046,14 +1337,14 @@ export function CustomerOrders() {
 
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '10px', paddingTop: '8px', borderTop: '1px solid var(--border)' }}>
                     <div>
-                      {ord.notes && <small style={{ color: 'var(--muted)' }}>Note: {ord.notes}</small>}
+                      {ord.notes && <small style={{ color: 'var(--muted-foreground)' }}>Note: {ord.notes}</small>}
                       {ord.status === 'cancelled' && ord.cancellationReason && (
-                        <small style={{ color: '#a94d34', display: 'block' }}>Cancellation: {ord.cancellationReason}</small>
+                        <small className="danger-text" style={{ display: 'block' }}>Cancellation: {ord.cancellationReason}</small>
                       )}
                     </div>
                     <div>
-                      <span style={{ fontSize: '11px', color: 'var(--muted)', marginRight: '8px' }}>Total Amount:</span>
-                      <b style={{ fontSize: '15px', color: 'var(--green)' }}>{money(ord.totalPaise)}</b>
+                      <span style={{ fontSize: '11px', color: 'var(--muted-foreground)', marginRight: '8px' }}>Total Amount:</span>
+                      <b style={{ fontSize: '15px', color: 'var(--success-foreground)' }}>{money(ord.totalPaise)}</b>
                     </div>
                   </div>
                 </div>
@@ -1102,18 +1393,9 @@ export function CustomerOrders() {
               {selectedItems.map((item, idx) => (
                 <div
                   key={idx}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '10px',
-                    marginBottom: '8px',
-                    padding: '8px 10px',
-                    background: '#f9faf7',
-                    borderRadius: '6px'
-                  }}
+                  className="order-item-row"
                 >
                   <select
-                    style={{ flex: 1, padding: '8px', border: '1px solid var(--border)', borderRadius: '4px' }}
                     value={item.product_id}
                     onChange={e => updateItem(idx, 'product_id', e.target.value)}
                     required
@@ -1129,7 +1411,6 @@ export function CustomerOrders() {
                     type="number"
                     min="1"
                     max="100"
-                    style={{ width: '65px', padding: '8px', border: '1px solid var(--border)', borderRadius: '4px' }}
                     value={item.quantity}
                     onChange={e => updateItem(idx, 'quantity', e.target.value)}
                     required
@@ -1139,7 +1420,7 @@ export function CustomerOrders() {
                     <button
                       type="button"
                       className="icon-button"
-                      style={{ color: '#a94d34', minWidth: '32px', minHeight: '32px' }}
+                      style={{ color: 'var(--destructive-soft-foreground)', minWidth: '32px', minHeight: '32px' }}
                       onClick={() => removeItemRow(idx)}
                     >
                       <X size={15} />
@@ -1149,9 +1430,9 @@ export function CustomerOrders() {
               ))}
             </div>
 
-            <div style={{ padding: '10px 14px', background: '#eaf3e8', borderRadius: '6px', display: 'flex', justifyContent: 'space-between', marginBottom: '16px' }}>
+            <div className="total-strip" style={{ marginBottom: '16px' }}>
               <span>Order Total (Frozen at placement):</span>
-              <b style={{ color: 'var(--green)', fontSize: '15px' }}>{money(liveTotalPaise)}</b>
+              <b style={{ color: 'var(--success-foreground)', fontSize: '15px' }}>{money(liveTotalPaise)}</b>
             </div>
 
             <Field
@@ -1195,8 +1476,7 @@ export function CustomerOrders() {
               </button>
               <button
                 type="submit"
-                className="button"
-                style={{ background: '#a94d34', color: '#fff', borderColor: '#a94d34' }}
+                className="button danger"
                 disabled={busy}
               >
                 {busy ? t('common.saving', 'Cancelling…') : 'Cancel Order'}
@@ -1220,6 +1500,7 @@ export function CustomerDisputes() {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
 
   async function openThread(d) {
     setError('');
@@ -1234,6 +1515,44 @@ export function CustomerDisputes() {
       setActiveDispute(d);
     }
   }
+
+  // Deep link from a notification: ?thread=<disputeId> opens that conversation.
+  useEffect(() => {
+    const threadId = searchParams.get('thread');
+    if (!threadId || activeDispute) return;
+    if (demo) {
+      const found = (disputes.data || []).find(d => d._id === threadId);
+      if (found) setActiveDispute(found);
+      setSearchParams({}, { replace: true });
+      return;
+    }
+    let cancelled = false;
+    api.get(`/disputes/${threadId}`)
+      .then(res => { if (!cancelled) setActiveDispute(res.data.data); })
+      .catch(() => {})
+      .finally(() => setSearchParams({}, { replace: true }));
+    return () => { cancelled = true; };
+  }, [searchParams, activeDispute, demo, disputes.data, setSearchParams]);
+
+  // Live thread: poll the open conversation so the dairy's replies appear
+  // without a refresh. Paused while typing or when the tab is hidden.
+  useEffect(() => {
+    if (!activeDispute?._id || demo) return;
+    const id = activeDispute._id;
+    const tick = async () => {
+      if (document.hidden) return;
+      if (document.activeElement && document.activeElement.tagName === 'TEXTAREA') return;
+      try {
+        const res = await api.get(`/disputes/${id}`);
+        const fresh = res.data.data;
+        setActiveDispute(prev => (prev && prev._id === id && (fresh.replies?.length || 0) > (prev.replies?.length || 0) ? fresh : prev));
+      } catch {
+        // Keep the last good thread on a transient poll failure.
+      }
+    };
+    const interval = setInterval(tick, 7000);
+    return () => clearInterval(interval);
+  }, [activeDispute?._id, demo]);
 
   async function handleCreateDispute(e) {
     e.preventDefault();
@@ -1353,7 +1672,7 @@ export function CustomerDisputes() {
                     border: '1px solid var(--border)',
                     borderRadius: '10px',
                     padding: '16px 18px',
-                    background: '#fff',
+                    background: 'var(--card)',
                     display: 'flex',
                     justifyContent: 'space-between',
                     alignItems: 'center',
@@ -1365,19 +1684,8 @@ export function CustomerDisputes() {
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
                       <span className="pill capitalize">{typeLabels[d.type] || d.type}</span>
                       <span
-                        className="status"
-                        style={{
-                          background:
-                            d.status === 'resolved' ? '#e9f5e8' :
-                            d.status === 'under_review' ? '#e8edf8' :
-                            d.status === 'cancelled' ? '#f3f3f3' : '#fcf5e7',
-                          color:
-                            d.status === 'resolved' ? '#2e7424' :
-                            d.status === 'under_review' ? '#28559a' :
-                            d.status === 'cancelled' ? '#666' : '#926a19',
-                          borderColor: 'currentColor',
-                          fontWeight: '600'
-                        }}
+                        className={`status ${d.status === 'resolved' ? 'success' : d.status === 'under_review' ? 'info' : d.status === 'cancelled' ? 'neutral' : 'pending'}`}
+                        style={{ fontWeight: '600' }}
                       >
                         {d.status === 'resolved' && <CheckCircle2 size={12} />}
                         {d.status === 'under_review' && <Clock size={12} />}
@@ -1387,8 +1695,8 @@ export function CustomerDisputes() {
                       </span>
                     </div>
                     <b style={{ fontSize: '14px' }}>{d.title}</b>
-                    <p style={{ fontSize: '12px', color: 'var(--muted)', margin: '4px 0' }}>{d.description}</p>
-                    <small style={{ color: 'var(--muted)' }}>
+                    <p style={{ fontSize: '12px', color: 'var(--muted-foreground)', margin: '4px 0' }}>{d.description}</p>
+                    <small style={{ color: 'var(--muted-foreground)' }}>
                       {new Date(d.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })} · {d.replies?.length || 0} messages
                     </small>
                   </div>
@@ -1456,9 +1764,6 @@ export function CustomerDisputes() {
                 rows={4}
                 placeholder="Please describe the date, shift, or issue clearly so your dairy can resolve it quickly..."
                 style={{
-                  border: '1px solid #dfe5d8',
-                  borderRadius: '6px',
-                  padding: '10px 12px',
                   width: '100%',
                   fontFamily: 'inherit',
                   fontSize: '13px'
@@ -1478,28 +1783,17 @@ export function CustomerDisputes() {
       {/* Thread Modal */}
       {activeDispute && (
         <Modal title={`Dispute: ${activeDispute.title}`} close={() => setActiveDispute(null)}>
-          <div style={{ marginBottom: '14px', padding: '10px 14px', background: '#f9faf7', borderRadius: '8px' }}>
+          <div className="note-strip" style={{ marginBottom: '14px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
               <span className="pill capitalize">{typeLabels[activeDispute.type] || activeDispute.type}</span>
               <span
-                className="status"
-                style={{
-                  background:
-                    activeDispute.status === 'resolved' ? '#e9f5e8' :
-                    activeDispute.status === 'under_review' ? '#e8edf8' :
-                    activeDispute.status === 'cancelled' ? '#f3f3f3' : '#fcf5e7',
-                  color:
-                    activeDispute.status === 'resolved' ? '#2e7424' :
-                    activeDispute.status === 'under_review' ? '#28559a' :
-                    activeDispute.status === 'cancelled' ? '#666' : '#926a19',
-                  borderColor: 'currentColor',
-                  fontWeight: '600'
-                }}
+                className={`status ${activeDispute.status === 'resolved' ? 'success' : activeDispute.status === 'under_review' ? 'info' : activeDispute.status === 'cancelled' ? 'neutral' : 'pending'}`}
+                style={{ fontWeight: '600' }}
               >
                 {activeDispute.status?.replace('_', ' ') || ''}
               </span>
             </div>
-            <p style={{ fontSize: '12px', color: 'var(--muted)', margin: '4px 0' }}>{activeDispute.description}</p>
+            <p style={{ fontSize: '12px', color: 'var(--muted-foreground)', margin: '4px 0' }}>{activeDispute.description}</p>
           </div>
 
           <div
@@ -1518,16 +1812,13 @@ export function CustomerDisputes() {
               return (
                 <div
                   key={i}
+                  className={`chat-bubble ${isMe ? 'me' : 'other'}`}
                   style={{
                     alignSelf: isMe ? 'flex-end' : 'flex-start',
-                    maxWidth: '82%',
-                    background: isMe ? '#e8f3ea' : '#f0f3f6',
-                    border: `1px solid ${isMe ? '#d2e7d6' : '#dde3eb'}`,
-                    borderRadius: '10px',
-                    padding: '10px 14px'
+                    maxWidth: '82%'
                   }}
                 >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', marginBottom: '4px', fontSize: '10px', color: 'var(--muted)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', marginBottom: '4px', fontSize: '10px', color: 'var(--muted-foreground)' }}>
                     <b>{isMe ? 'You' : (r.authorName || 'Dairy')} ({r.role})</b>
                     <span>{new Date(r.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                   </div>
@@ -1540,11 +1831,11 @@ export function CustomerDisputes() {
           </div>
 
           {activeDispute.status === 'resolved' && (
-            <div style={{ padding: '12px 14px', background: '#e9f5e8', border: '1px solid #cce5cb', borderRadius: '8px', marginBottom: '14px' }}>
-              <b style={{ color: '#2e7424', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px' }}>
+            <div className="resolved-banner" style={{ marginBottom: '14px' }}>
+              <b className="resolved-title">
                 <CheckCircle2 size={16} /> Resolved by Dairy
               </b>
-              <p style={{ fontSize: '12px', margin: '6px 0 0', color: '#2b5025' }}>
+              <p>
                 {activeDispute.resolutionNotes}
               </p>
             </div>
@@ -1559,11 +1850,13 @@ export function CustomerDisputes() {
                   rows={2}
                   style={{
                     flex: 1,
-                    border: '1px solid #dfe5d8',
+                    border: '1px solid var(--border)',
                     borderRadius: '6px',
                     padding: '8px 12px',
                     fontFamily: 'inherit',
-                    fontSize: '13px'
+                    fontSize: '13px',
+                    background: 'var(--card)',
+                    color: 'var(--foreground)'
                   }}
                   placeholder="Type a message to your dairy..."
                   value={replyMessage}
@@ -1584,8 +1877,7 @@ export function CustomerDisputes() {
               <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
                 <button
                   type="button"
-                  className="button small"
-                  style={{ color: '#a94d34', borderColor: '#f4d9cf' }}
+                  className="button small danger-ghost"
                   onClick={handleCancelDispute}
                   disabled={busy}
                 >
@@ -1594,7 +1886,7 @@ export function CustomerDisputes() {
               </div>
             </form>
           ) : (
-            <div style={{ textAlign: 'center', padding: '10px', color: 'var(--muted)', fontSize: '12px' }}>
+            <div style={{ textAlign: 'center', padding: '10px', color: 'var(--muted-foreground)', fontSize: '12px' }}>
               This dispute is {activeDispute.status}.
             </div>
           )}

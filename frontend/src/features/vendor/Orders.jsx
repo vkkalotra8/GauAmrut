@@ -133,7 +133,7 @@ export default function Orders() {
 
       <div className="filter-bar" style={{ marginBottom: '16px' }}>
         <div className="field" style={{ minWidth: '160px' }}>
-          <label style={{ fontSize: '11px', color: 'var(--muted)', marginBottom: '4px' }}>
+          <label style={{ fontSize: '11px', color: 'var(--muted-foreground)', marginBottom: '4px' }}>
             {t('orders.filterStatus', 'Status')}
           </label>
           <select
@@ -149,7 +149,7 @@ export default function Orders() {
         </div>
 
         <div className="field" style={{ minWidth: '160px' }}>
-          <label style={{ fontSize: '11px', color: 'var(--muted)', marginBottom: '4px' }}>
+          <label style={{ fontSize: '11px', color: 'var(--muted-foreground)', marginBottom: '4px' }}>
             {t('orders.deliveryDate', 'Delivery Date')}
           </label>
           <input
@@ -171,7 +171,7 @@ export default function Orders() {
                     border: '1px solid var(--border)',
                     borderRadius: '10px',
                     padding: '18px 20px',
-                    background: '#fff'
+                    background: 'var(--card)'
                   }}
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '10px', marginBottom: '12px' }}>
@@ -183,7 +183,7 @@ export default function Orders() {
                         <div>
                           <b style={{ fontSize: '14px' }}>{order.customerName || 'Customer'}</b>
                           {order.customerPhone && (
-                            <small style={{ display: 'block', color: 'var(--muted)' }}>
+                            <small style={{ display: 'block', color: 'var(--muted-foreground)' }}>
                               {order.customerPhone}
                             </small>
                           )}
@@ -196,19 +196,8 @@ export default function Orders() {
                         {order.deliveryDate} · <span className="capitalize">{order.shift}</span>
                       </span>
                       <span
-                        className="status"
-                        style={{
-                          background:
-                            order.status === 'fulfilled' ? '#e9f5e8' :
-                            order.status === 'confirmed' ? '#e8edf8' :
-                            order.status === 'cancelled' ? '#faeaea' : '#fcf5e7',
-                          color:
-                            order.status === 'fulfilled' ? '#2e7424' :
-                            order.status === 'confirmed' ? '#28559a' :
-                            order.status === 'cancelled' ? '#9a2828' : '#8c6b16',
-                          borderColor: 'currentColor',
-                          fontWeight: '600'
-                        }}
+                        className={`status ${order.status === 'fulfilled' ? 'success' : order.status === 'confirmed' ? 'info' : order.status === 'cancelled' ? 'danger' : 'pending'}`}
+                        style={{ fontWeight: '600' }}
                       >
                         {order.status === 'fulfilled' && <CheckCircle2 size={12} />}
                         {order.status === 'confirmed' && <Check size={12} />}
@@ -221,7 +210,7 @@ export default function Orders() {
 
                   {/* Items list */}
                   <div className="table-scroll" style={{ margin: '12px 0' }}>
-                    <table style={{ background: '#fafbf9', borderRadius: '6px', overflow: 'hidden' }}>
+                    <table style={{ background: 'var(--background)', borderRadius: '6px', overflow: 'hidden' }}>
                       <thead>
                         <tr>
                           <th>Item</th>
@@ -246,12 +235,12 @@ export default function Orders() {
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', paddingTop: '10px', borderTop: '1px solid var(--border)' }}>
                     <div>
                       {order.notes && (
-                        <p style={{ fontSize: '11px', color: 'var(--muted)', margin: 0 }}>
+                        <p style={{ fontSize: '11px', color: 'var(--muted-foreground)', margin: 0 }}>
                           <b>Note:</b> {order.notes}
                         </p>
                       )}
                       {order.status === 'cancelled' && order.cancellationReason && (
-                        <p style={{ fontSize: '11px', color: '#a94d34', margin: '4px 0 0' }}>
+                        <p className="danger-text" style={{ fontSize: '11px', margin: '4px 0 0' }}>
                           <b>Reason:</b> {order.cancellationReason}
                         </p>
                       )}
@@ -259,8 +248,8 @@ export default function Orders() {
 
                     <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
                       <div style={{ textAlign: 'right' }}>
-                        <small style={{ color: 'var(--muted)', display: 'block', fontSize: '10px' }}>Total Amount</small>
-                        <b style={{ fontSize: '16px', color: 'var(--green)' }}>{money(order.totalPaise)}</b>
+                        <small style={{ color: 'var(--muted-foreground)', display: 'block', fontSize: '10px' }}>Total Amount</small>
+                        <b style={{ fontSize: '16px', color: 'var(--success-foreground)' }}>{money(order.totalPaise)}</b>
                       </div>
 
                       {/* Action buttons */}
@@ -276,8 +265,7 @@ export default function Orders() {
                           </button>
                           <button
                             type="button"
-                            className="button small"
-                            style={{ color: '#a94d34', borderColor: '#f4d9cf' }}
+                            className="button small danger-ghost"
                             disabled={busy}
                             onClick={() => setCancellingOrder(order)}
                           >
@@ -291,7 +279,6 @@ export default function Orders() {
                           <button
                             type="button"
                             className="button small primary"
-                            style={{ background: '#257348' }}
                             disabled={busy}
                             onClick={() => handleStatusChange(order, 'fulfilled')}
                           >
@@ -299,8 +286,7 @@ export default function Orders() {
                           </button>
                           <button
                             type="button"
-                            className="button small"
-                            style={{ color: '#a94d34', borderColor: '#f4d9cf' }}
+                            className="button small danger-ghost"
                             disabled={busy}
                             onClick={() => setCancellingOrder(order)}
                           >
@@ -332,7 +318,7 @@ export default function Orders() {
                 <option value="" disabled>Select customer</option>
                 {customersResource.data?.map(c => (
                   <option key={c._id} value={c._id}>
-                    {c.name} ({c.phone})
+                    {c.name}{c.phone ? ` (${c.phone})` : ''}
                   </option>
                 ))}
               </select>
@@ -371,18 +357,9 @@ export default function Orders() {
               {selectedItems.map((item, idx) => (
                 <div
                   key={idx}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '10px',
-                    marginBottom: '8px',
-                    padding: '8px 10px',
-                    background: '#f9faf7',
-                    borderRadius: '6px'
-                  }}
+                  className="order-item-row"
                 >
                   <select
-                    style={{ flex: 1, padding: '8px', border: '1px solid var(--border)', borderRadius: '4px' }}
                     value={item.product_id}
                     onChange={e => updateItem(idx, 'product_id', e.target.value)}
                     required
@@ -398,7 +375,6 @@ export default function Orders() {
                     type="number"
                     min="1"
                     max="100"
-                    style={{ width: '65px', padding: '8px', border: '1px solid var(--border)', borderRadius: '4px' }}
                     value={item.quantity}
                     onChange={e => updateItem(idx, 'quantity', e.target.value)}
                     required
@@ -408,7 +384,7 @@ export default function Orders() {
                     <button
                       type="button"
                       className="icon-button"
-                      style={{ color: '#a94d34', minWidth: '32px', minHeight: '32px' }}
+                      style={{ color: 'var(--destructive-soft-foreground)', minWidth: '32px', minHeight: '32px' }}
                       onClick={() => removeItemRow(idx)}
                     >
                       <X size={15} />
@@ -418,9 +394,9 @@ export default function Orders() {
               ))}
             </div>
 
-            <div style={{ padding: '10px 14px', background: '#eaf3e8', borderRadius: '6px', display: 'flex', justifyContent: 'space-between', marginBottom: '16px' }}>
+            <div className="total-strip" style={{ marginBottom: '16px' }}>
               <span>Estimated Total:</span>
-              <b style={{ color: 'var(--green)', fontSize: '15px' }}>{money(orderEstimatePaise)}</b>
+              <b style={{ color: 'var(--success-foreground)', fontSize: '15px' }}>{money(orderEstimatePaise)}</b>
             </div>
 
             <Field
@@ -474,8 +450,7 @@ export default function Orders() {
               </button>
               <button
                 type="submit"
-                className="button"
-                style={{ background: '#a94d34', color: '#fff', borderColor: '#a94d34' }}
+                className="button danger"
                 disabled={busy}
               >
                 {busy ? t('common.saving', 'Cancelling…') : t('orders.confirmCancellation', 'Confirm Cancellation')}

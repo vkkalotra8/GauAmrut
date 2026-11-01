@@ -23,4 +23,10 @@ describe('GauAmrut workspace', () => {
     expect(decimalUnits('60.05')).toBe(6005); expect(decimalUnits('1.125', 1000)).toBe(1125);
     expect(() => decimalUnits('1.001')).toThrow(); expect(() => decimalUnits('-1')).toThrow();
   });
+  test('publishes legal and payment-disclaimer pages without requiring sign-in', () => {
+    render(<Provider store={store}><MemoryRouter initialEntries={['/terms']}><App/></MemoryRouter></Provider>);
+    expect(screen.getByRole('heading', { name: 'Terms of service' })).toBeInTheDocument();
+    expect(screen.getByText(/does not hold money, initiate settlement, or guarantee UPI/i)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Privacy' })).toHaveAttribute('href', '/privacy');
+  });
 });

@@ -9,3 +9,6 @@ coverage/
 .local/
 test-results/
 playwright-report/
+.wa-auth/
+
+/output/

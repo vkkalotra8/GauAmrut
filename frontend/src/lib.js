@@ -1,6 +1,6 @@
 import axios from 'axios';
 import { configureStore, createSlice } from '@reduxjs/toolkit';
-export const api = axios.create({ baseURL: import.meta.env.VITE_API_URL || 'http://127.0.0.1:4000/api', timeout: 15000 });
+export const api = axios.create({ baseURL: import.meta.env.VITE_API_URL || `http://${window.location.hostname || '127.0.0.1'}:4000/api`, timeout: 15000 });
 const session = createSlice({ name: 'session', initialState: { token: null, user: null, demo: false }, reducers: { updateUser: (state, action) => { state.user = { ...state.user, ...action.payload }; }, signIn: (_state, action) => ({ ...action.payload, demo: false }), preview: () => ({ token: null, demo: true, user: { id: 'demo', name: 'Aarav Patel', businessName: 'Shree Krishna Dairy', code: 'GAU8K2P4', role: 'milkman' } }), signOut: () => ({ token: null, user: null, demo: false }) } });
 export const { signIn, preview, signOut, updateUser } = session.actions;
 export const store = configureStore({ reducer: { session: session.reducer } });

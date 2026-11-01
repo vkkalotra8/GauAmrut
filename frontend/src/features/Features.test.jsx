@@ -4,7 +4,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { Provider } from 'react-redux';
 import { MemoryRouter } from 'react-router-dom';
 import NotificationsDrawer from '../components/NotificationsDrawer';
-import { CustomerHistory, CustomerPayments } from './customer/Portal';
+import { CustomerHistory, CustomerPayments, CustomerProfile } from './customer/Portal';
 import AdminPortal from './admin/AdminPortal';
 import useData from '../hooks/useData';
 import { store, signIn, api } from '../lib';
@@ -156,6 +156,44 @@ describe('New Platform Capabilities Integration Tests', () => {
     });
   });
 
+  test('CustomerPayments generates a QR and UPI app handoff without claiming settlement', async () => {
+    const mockBills = [
+      { _id: 'bill-upi', month: '2026-08', openingPaise: 0, chargesPaise: 12550, paidPaise: 0, closingPaise: 12550 }
+    ];
+    useData.mockImplementation((path) => {
+      if (path === '/bills/statement?month=2026-10') return { data: null, loading: false, error: '', reload: vi.fn() };
+      if (path.startsWith('/bills')) return { data: mockBills, loading: false, error: '', reload: vi.fn(), meta: { total: 1 } };
+      return { data: [], loading: false, error: '', reload: vi.fn(), meta: { total: 0 } };
+    });
+    api.post.mockResolvedValueOnce({ data: { data: {
+      id: 'intent-1', bill_id: 'bill-upi', amountPaise: 505, currency: 'INR',
+      payee: { upiId: 'dairy@bank', name: 'Pure Farm Dairy' },
+      internalReference: 'GAUPI-test', status: 'active',
+      expiresAt: '2026-10-31T12:00:00.000Z',
+      upiUri: 'upi://pay?pa=dairy%40bank&pn=Pure+Farm+Dairy&am=5.05&cu=INR&tn=GAUPI-test',
+      qrDataUrl: 'data:image/png;base64,AAAA', settlementStatus: 'unverified'
+    } } });
+
+    render(<Provider store={store}><MemoryRouter><CustomerPayments /></MemoryRouter></Provider>);
+    fireEvent.click(await screen.findByRole('button', { name: /Pay now/i }));
+    expect(screen.getByText('Outstanding balance')).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Amount to pay (?)'), { target: { value: '5.05' } });
+    fireEvent.click(screen.getByRole('button', { name: /Generate UPI QR/i }));
+
+    await waitFor(() => expect(api.post).toHaveBeenCalledWith(
+      '/payment-intents',
+      { bill_id: 'bill-upi', amountPaise: 505 },
+      { headers: { 'Idempotency-Key': expect.stringMatching(/^upi-bill-upi-505-/) } }
+    ));
+    expect(await screen.findByAltText('UPI payment QR for Pure Farm Dairy')).toHaveAttribute('src', 'data:image/png;base64,AAAA');
+    expect(screen.getByRole('link', { name: /Pay via UPI app/i })).toHaveAttribute('href', expect.stringContaining('upi://pay')) ;
+    expect(screen.getByText(/Complete payment in your UPI app/)).toBeInTheDocument();
+    expect(screen.queryByText(/Payment successful/i)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Submit payment details' }));
+    expect(await screen.findByRole('heading', { name: 'Submit a payment claim' })).toBeInTheDocument();
+    expect(screen.getByText(/must verify the transaction reference/)).toBeInTheDocument();
+  });
+
   test('AdminPortal renders platform sections with management actions', async () => {
     store.dispatch(signIn({
       user: {
@@ -199,5 +237,93 @@ describe('New Platform Capabilities Integration Tests', () => {
     await waitFor(() => {
       expect(api.patch).toHaveBeenCalledWith('/admin/dairies/d-1/verify', { verified: true });
     });
+
+    // Admin can export the dairy directory PDF, share it through the native
+    // share sheet, or push it to a specific number
+    expect(screen.getByRole('button', { name: /Download PDF/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Share on WhatsApp/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Send to a number/i })).toBeInTheDocument();
+
+    // The share button pulls the same authenticated blob as its download button
+    // and hands the real file to the OS, so WhatsApp receives the PDF itself.
+    const share = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(window.navigator, 'share', { configurable: true, value: share });
+    Object.defineProperty(window.navigator, 'canShare', { configurable: true, value: () => true });
+    try {
+      fireEvent.click(screen.getByRole('button', { name: /Share on WhatsApp/i }));
+      await waitFor(() => expect(share).toHaveBeenCalledTimes(1));
+
+      const [{ files: [file] }] = share.mock.calls[0];
+      expect(file).toBeInstanceOf(File);
+      expect(file.name).toBe('gauamrut-dairy-directory.pdf');
+      expect(file.type).toBe('application/pdf');
+      expect(api.get).toHaveBeenCalledWith('/admin/dairies.pdf', { responseType: 'blob' });
+    } finally {
+      delete window.navigator.share;
+      delete window.navigator.canShare;
+    }
+  });
+
+  test('CustomerProfile shows verify prompts for unverified contact details', async () => {
+    useData.mockImplementation((path) => {
+      if (path.startsWith('/profile')) {
+        return {
+          data: { name: 'Meera', email: 'meera@example.com', phone: '9876543210', emailVerifiedAt: null, phoneVerifiedAt: null, status: 'active', language: 'en', updatedAt: 1, cowRatePaise: 6000, buffaloRatePaise: 8000 },
+          loading: false, error: '', reload: vi.fn()
+        };
+      }
+      return { data: [], loading: false, error: '', reload: vi.fn() };
+    });
+
+    render(
+      <Provider store={store}>
+        <MemoryRouter>
+          <CustomerProfile />
+        </MemoryRouter>
+      </Provider>
+    );
+
+    expect(await screen.findByRole('button', { name: /Verify email/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Verify mobile number/i })).toBeInTheDocument();
+
+    // Opening the mobile verification flow sends a code over WhatsApp
+    fireEvent.click(screen.getByRole('button', { name: /Verify mobile number/i }));
+    expect(await screen.findByText(/send a 6-digit code to your mobile number on WhatsApp/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Send code/i }));
+    await waitFor(() => {
+      expect(api.post).toHaveBeenCalledWith('/profile/verification/request', { channel: 'phone' });
+    });
+
+    // Entering the code confirms the verification
+    const otpInput = await screen.findByLabelText(/6-digit code/i);
+    fireEvent.change(otpInput, { target: { value: '123456' } });
+    fireEvent.click(screen.getByRole('button', { name: /^Verify$/i }));
+    await waitFor(() => {
+      expect(api.post).toHaveBeenCalledWith('/profile/verification/confirm', { channel: 'phone', otp: '123456' });
+    });
+  });
+
+  test('CustomerProfile shows Verified badges when contact details are verified', async () => {
+    useData.mockImplementation((path) => {
+      if (path.startsWith('/profile')) {
+        return {
+          data: { name: 'Meera', email: 'meera@example.com', phone: '9876543210', emailVerifiedAt: '2026-10-01T00:00:00.000Z', phoneVerifiedAt: '2026-10-01T00:00:00.000Z', status: 'active', language: 'en', updatedAt: 1 },
+          loading: false, error: '', reload: vi.fn()
+        };
+      }
+      return { data: [], loading: false, error: '', reload: vi.fn() };
+    });
+
+    render(
+      <Provider store={store}>
+        <MemoryRouter>
+          <CustomerProfile />
+        </MemoryRouter>
+      </Provider>
+    );
+
+    expect(await screen.findAllByText('Verified')).toHaveLength(2);
+    expect(screen.queryByRole('button', { name: /Verify email/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Verify mobile number/i })).not.toBeInTheDocument();
   });
 });

@@ -161,7 +161,7 @@ export default function Records() {
     } catch (e) { setError(message(e)); } finally { setBusy(false); }
   }
   return <><Heading eyebrow={t('records.eyebrow', 'FRESH MILK. EVERY DOORSTEP.')} title={t('records.title', 'Daily milk entry')} description={t('records.description', 'Your customers’ usual quantities are ready. Change only what is different today.')}/>
-    <div className="tab-nav" style={{ display: 'flex', gap: '8px', marginBottom: '20px', borderBottom: '1px solid var(--border)', paddingBottom: '8px' }}>
+    <div className="tab-nav">
       <button
         type="button"
         className={`button small ${activeTab === 'route' ? 'primary' : ''}`}
@@ -177,9 +177,7 @@ export default function Records() {
       >
         Customer vacation & extra requests
         {pendingAdjustmentsCount > 0 && (
-          <span style={{ marginLeft: '6px', background: '#d97706', color: '#fff', borderRadius: '10px', padding: '1px 6px', fontSize: '10px' }}>
-            {pendingAdjustmentsCount}
-          </span>
+          <span className="count-badge">{pendingAdjustmentsCount}</span>
         )}
       </button>
     </div>
@@ -200,12 +198,12 @@ export default function Records() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                     <b>{c.name}</b>
                     {adj?.type === 'vacation' && (
-                      <span className="pill" style={{ background: '#fef3c7', color: '#92400e', borderColor: '#fde68a', fontWeight: '600' }}>
+                      <span className="pill pending" style={{ fontWeight: '600' }}>
                         Vacation Paused (0 L)
                       </span>
                     )}
                     {adj?.type === 'extra' && (
-                      <span className="pill" style={{ background: '#ecfdf5', color: '#065f46', borderColor: '#a7f3d0', fontWeight: '600' }}>
+                      <span className="pill success" style={{ fontWeight: '600' }}>
                         Extra (+{(adj.quantityMl || 0) / 1000} L)
                       </span>
                     )}
@@ -220,7 +218,7 @@ export default function Records() {
         })}</div> : <Empty>{t('records.noEligible', 'No active customers on this page are eligible for this date.')}</Empty>}</State>
         <div className="save-bar"><span><b>{entries.length}</b> {t('records.entriesReady', 'entries ready to save')}</span><div className="heading-actions">{dirty && <button className="button" disabled={busy} onClick={reset}>{t('records.resetDefaults', 'Reset to defaults')}</button>}<button className="button primary" onClick={save} disabled={busy || !entries.length || customers.loading || records.loading || Boolean(customers.error) || Boolean(records.error)}>{busy ? t('common.saving', 'Saving…') : t('records.saveDeliveries', 'Save deliveries')}<Check size={18}/></button></div></div>
         <div className="pagination"><small>{t('records.paginationNote', { page, defaultValue: `Page ${page} · Defaults are saved only when you select Save deliveries.` })}</small><button className="button" disabled={dirty || busy || page === 1} onClick={() => setPage(p => p - 1)}>Previous</button><button className="button" disabled={dirty || busy || page * 50 >= (customers.meta?.total || customers.data?.length || 0)} onClick={() => setPage(p => p + 1)}>Next</button></div></section>
-        <section className="card section-gap"><div className="card-heading"><h2>{t('records.recordedHeading', { date, defaultValue: `Recorded deliveries · ${date}` })}</h2></div><State resource={records}>{records.data?.length ? <div className="table-scroll"><table><thead><tr><th>{t('nav.customers', 'Customer')}</th><th>{t('records.shift', 'Shift')}</th><th>{t('records.milkType', 'Milk')}</th><th>{t('records.correctQuantity', 'Quantity')}</th><th>{t('common.amount', 'Amount')}</th><th>{t('common.actions', 'Actions')}</th></tr></thead><tbody>{records.data.map(r => <tr key={r._id}><td>{customers.data?.find(c => c._id === r.customer_id)?.name || r.customerName || 'Customer'}</td><td className="capitalize">{r.shift}</td><td className="capitalize">{r.type}</td><td>{r.quantityMl / 1000} L</td><td>{money(r.totalPaise)}</td><td><button className="text-button" style={{ marginRight: '10px' }} onClick={() => { setCorrectionError(''); setCorrecting(r); }}>{t('common.edit', 'Edit')}</button><button className="text-button" style={{ color: '#a94d34' }} onClick={() => setDeleteConfirm(r)}>{t('common.delete', 'Delete')}</button></td></tr>)}</tbody></table></div> : <Empty>{t('records.noRecorded', 'No deliveries recorded for this date yet.')}</Empty>}</State></section>
+        <section className="card section-gap"><div className="card-heading"><h2>{t('records.recordedHeading', { date, defaultValue: `Recorded deliveries · ${date}` })}</h2></div><State resource={records}>{records.data?.length ? <div className="table-scroll"><table><thead><tr><th>{t('nav.customers', 'Customer')}</th><th>{t('records.shift', 'Shift')}</th><th>{t('records.milkType', 'Milk')}</th><th>{t('records.correctQuantity', 'Quantity')}</th><th>{t('common.amount', 'Amount')}</th><th>{t('common.actions', 'Actions')}</th></tr></thead><tbody>{records.data.map(r => <tr key={r._id}><td>{customers.data?.find(c => c._id === r.customer_id)?.name || r.customerName || 'Customer'}</td><td className="capitalize">{r.shift}</td><td className="capitalize">{r.type}</td><td>{r.quantityMl / 1000} L</td><td>{money(r.totalPaise)}</td><td><button className="text-button" style={{ marginRight: '10px' }} onClick={() => { setCorrectionError(''); setCorrecting(r); }}>{t('common.edit', 'Edit')}</button><button className="text-button danger-text" onClick={() => setDeleteConfirm(r)}>{t('common.delete', 'Delete')}</button></td></tr>)}</tbody></table></div> : <Empty>{t('records.noRecorded', 'No deliveries recorded for this date yet.')}</Empty>}</State></section>
       </>
     ) : (
       <section className="card">
@@ -252,12 +250,8 @@ export default function Records() {
                         <td><b>{cust?.name || adj.customerName || adj.customer_id?.slice(-6) || 'Customer'}</b></td>
                         <td>
                           <span
-                            className="pill"
-                            style={{
-                              background: adj.type === 'vacation' ? '#fef3c7' : '#ecfdf5',
-                              color: adj.type === 'vacation' ? '#92400e' : '#065f46',
-                              fontWeight: '600'
-                            }}
+                            className={`pill ${adj.type === 'vacation' ? 'pending' : 'success'}`}
+                            style={{ fontWeight: '600' }}
                           >
                             {adj.type === 'vacation' ? 'Vacation pause' : 'Extra milk'}
                           </span>
@@ -268,8 +262,7 @@ export default function Records() {
                         <td>{adj.reason || '—'}</td>
                         <td>
                           <span
-                            className={`status ${adj.status === 'approved' ? '' : adj.status === 'rejected' || adj.status === 'cancelled' ? 'neutral' : ''}`}
-                            style={adj.status === 'pending' ? { background: '#fef3c7', color: '#92400e' } : {}}
+                            className={`status ${adj.status === 'approved' ? 'success' : adj.status === 'pending' ? 'pending' : 'neutral'}`}
                           >
                             {adj.status}
                           </span>
@@ -287,8 +280,7 @@ export default function Records() {
                               </button>
                               <button
                                 type="button"
-                                className="button small"
-                                style={{ color: '#a94d34' }}
+                                className="button small danger-ghost"
                                 disabled={busy}
                                 onClick={() => handleReviewAdjustment(adj._id, 'rejected')}
                               >
@@ -296,7 +288,7 @@ export default function Records() {
                               </button>
                             </div>
                           ) : (
-                            <small style={{ color: 'var(--muted)' }}>Reviewed</small>
+                            <small style={{ color: 'var(--muted-foreground)' }}>Reviewed</small>
                           )}
                         </td>
                       </tr>
@@ -312,8 +304,8 @@ export default function Records() {
       </section>
     )}
 
-    {correcting && <Modal title={t('records.correctTitle', 'Correct delivery entry')} close={() => setCorrecting(null)}><form onSubmit={saveCorrection}><p className="form-note">Customer: <b>{customers.data?.find(c => c._id === correcting.customer_id)?.name || 'Customer'}</b><br/>Shift: <b className="capitalize">{correcting.shift}</b> · Milk: <b className="capitalize">{correcting.type}</b></p><Field label={t('records.correctQuantity', 'Correct quantity (litres)')} name="quantity" type="number" min="0.001" max="100" step="0.001" defaultValue={correcting.quantityMl / 1000} required /><Notice error>{correctionError}</Notice><button className="button primary full" disabled={busy}>{busy ? t('common.saving', 'Saving…') : t('records.saveCorrection', 'Save correction')}</button></form></Modal>}
-    {deleteConfirm && <Modal title={t('records.deleteTitle', 'Delete delivery entry?')} close={() => setDeleteConfirm(null)}><p className="form-note">Are you sure you want to delete this delivery for <b>{customers.data?.find(c => c._id === deleteConfirm.customer_id)?.name || 'Customer'}</b> ({deleteConfirm.quantityMl / 1000} L {deleteConfirm.type} milk, {deleteConfirm.shift} shift)?</p><div style={{ display: 'flex', gap: '10px', marginTop: '20px' }}><button type="button" className="button full" onClick={() => setDeleteConfirm(null)}>{t('common.cancel', 'Cancel')}</button><button type="button" className="button primary full" style={{ background: '#a94d34', borderColor: '#a94d34' }} disabled={busy} onClick={() => deleteDelivery(deleteConfirm)}>{busy ? t('common.saving', 'Deleting…') : t('records.confirmDelete', 'Confirm delete')}</button></div></Modal>}
+    {correcting && <Modal title={t('records.correctTitle', 'Correct delivery entry')} close={() => setCorrecting(null)}><form onSubmit={saveCorrection}><p className="form-note">Customer: <b>{customers.data?.find(c => c._id === correcting.customer_id)?.name || 'Customer'}</b><br/>Shift: <b className="capitalize">{correcting.shift}</b> · Milk: <b className="capitalize">{correcting.type}</b></p><Field label={t('records.correctQuantity', 'Correct quantity (litres)')} name="quantity" type="number" min="0" max="100" step="0.001" defaultValue={correcting.quantityMl / 1000} required /><Notice error>{correctionError}</Notice><button className="button primary full" disabled={busy}>{busy ? t('common.saving', 'Saving…') : t('records.saveCorrection', 'Save correction')}</button></form></Modal>}
+    {deleteConfirm && <Modal title={t('records.deleteTitle', 'Delete delivery entry?')} close={() => setDeleteConfirm(null)}><p className="form-note">Are you sure you want to delete this delivery for <b>{customers.data?.find(c => c._id === deleteConfirm.customer_id)?.name || 'Customer'}</b> ({deleteConfirm.quantityMl / 1000} L {deleteConfirm.type} milk, {deleteConfirm.shift} shift)?</p><div style={{ display: 'flex', gap: '10px', marginTop: '20px' }}><button type="button" className="button full" onClick={() => setDeleteConfirm(null)}>{t('common.cancel', 'Cancel')}</button><button type="button" className="button danger full" disabled={busy} onClick={() => deleteDelivery(deleteConfirm)}>{busy ? t('common.saving', 'Deleting…') : t('records.confirmDelete', 'Confirm delete')}</button></div></Modal>}
   </>;
 }
 

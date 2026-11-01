@@ -118,9 +118,9 @@
     "rejectModalNote": "કૃપા કરીને ગ્રાહકને સ્પષ્ટ કારણ જણાવો કે આ ચુકવણી દાવો કેમ ચકાસી શકાયો નથી.",
     "rejectionReasonLabel": "નકારવાનું કારણ",
     "confirmReject": "નકારવાની પુષ્ટિ કરો",
-    "finalizeBillTitle": "માસિક બિલ આખરી કરો",
+    "finalizeBillTitle": "માસિક બિલ બનાવો",
     "recordPaymentTitle": "ચુકવણી નોંધો",
-    "carryForwardNote": "બિલ આખરી કરવાથી વિતરણ લૉક થાય છે. પાછલા મહિનાની બાકી રકમ આપમેળે નવા બિલમાં ઉમેરાય છે.",
+    "carryForwardNote": "બિલ ગમે ત્યારે બનાવી શકાય છે અને નવી ડિલિવરી સાથે અપડેટ થાય છે. પાછલા મહિનાની બાકી રકમ ખુલ્લા બેલેન્સમાં ઉમેરાય છે.",
     "selectCustomer": "ગ્રાહક",
     "selectCustomerPlaceholder": "ગ્રાહક પસંદ કરો",
     "billingMonthLabel": "બિલિંગ મહિનો",
@@ -131,7 +131,7 @@
     "methodUpi": "UPI",
     "methodBank": "બેંક ટ્રાન્સફર",
     "referenceLabel": "વ્યવહાર સંદર્ભ નંબર (UTR)",
-    "confirmBill": "પુષ્ટિ કરો અને બિલ આખરી કરો",
+    "confirmBill": "પુષ્ટિ કરો અને બિલ બનાવો",
     "confirmPayment": "ચુકવણી પ્રાપ્તિની પુષ્ટિ કરો",
     "receiptTitle": "ચુકવણી રસીદ",
     "verifiedReceipt": "ચકાસાયેલ રસીદ",
@@ -139,7 +139,7 @@
     "remainingDue": "બાકી રહેલ રકમ",
     "receiptFootnote": "ગૌઅમૃત પ્લેટફોર્મ દ્વારા જનરેટ કરેલ ડિજિટલ રસીદ.",
     "printReceipt": "રસીદ પ્રિન્ટ કરો",
-    "billFinalized": "કેરી-ફોરવર્ડ ખાતા સાથે માસિક બિલ બની ગયું.",
+    "billFinalized": "કેરી-ફોરવર્ડ ખાતા સાથે માસિક બિલ બની ગયું. નવી એન્ટ્રીઓ સાથે તે અપડેટ થાય છે.",
     "paymentRecorded": "ચુકવણી સફળતાપૂર્વક નોંધાઈ ગઈ.",
     "claimApprovedNotice": "ચુકવણી દાવો મંજૂર થયો અને રસીદ જારી થઈ.",
     "claimRejectedNotice": "ચુકવણી દાવો કારણ સાથે નકારવામાં આવ્યો.",
@@ -171,7 +171,10 @@
     "reverseAdjustmentReasonLabel": "સમાયોજન ઉલટાવવાનું કારણ",
     "confirmReverseAdjustment": "સમાયોજન ઉલટાવવાની પુષ્ટિ કરો",
     "adjustmentReversedNotice": "સમાયોજન સફળતાપૂર્વક ઉલટાવાઈ ગયું.",
-    "noAdjustments": "હજી સુધી કોઈ સમાયોજન કે ક્રેડિટ નોંધાયેલ નથી."
+    "noAdjustments": "હજી સુધી કોઈ સમાયોજન કે ક્રેડિટ નોંધાયેલ નથી.",
+    "collectedLegend": "એકત્રિત",
+    "outstandingLegend": "બાકી",
+    "collectedShort": "એકત્રિત"
   },
   "queue": {
     "batchesOnDevice": "આ ઉપકરણ પર {{count}} વિતરણ બેચ",
@@ -218,7 +221,25 @@
     "profileDescription": "તમારું નામ, વિતરણ સરનામું અને ભાષા પ્રાથમિકતા અદ્યતન રાખો.",
     "preferredLanguage": "પસંદગીની ભાષા",
     "saveProfile": "પ્રોફાઇલ સાચવો",
-    "profileSaved": "પ્રોફાઇલ વિગતો અદ્યતન કરવામાં આવી."
+    "profileSaved": "પ્રોફાઇલ વિગતો અદ્યતન કરવામાં આવી.",
+    "monthlyTrendTitle": "આ મહિનાની ડિલિવરી",
+    "monthlyTrendSub": "તમારું રોજનું દૂધ, દિવસે દિવસે",
+    "contactEmail": "ઇમેઇલ",
+    "contactMobile": "મોબાઇલ નંબર",
+    "verified": "ચકાસાયેલ",
+    "verifyEmailCta": "ઇમેઇલ ચકાસો",
+    "verifyMobileCta": "મોબાઇલ નંબર ચકાસો",
+    "verifyEmailTitle": "ઇમેઇલ ચકાસો",
+    "verifyMobileTitle": "મોબાઇલ નંબર ચકાસો",
+    "verifyPhoneIntro": "અમે તમારા મોબાઇલ નંબર પર WhatsApp પર 6 અંકનો કોડ મોકલીશું. નંબરની ચકાસણી માટે તે અહીં દાખલ કરો.",
+    "verifyEmailIntro": "અમે તમારા નોંધાયેલ ઇમેઇલ સરનામા પર 6 અંકનો કોડ મોકલીશું. ખાતરી માટે તે અહીં દાખલ કરો.",
+    "sendCode": "કોડ મોકલો",
+    "codeSentPhone": "તમારા મોબાઇલ નંબર પર WhatsApp પર 6 અંકનો કોડ મોકલાયો છે. નીચે દાખલ કરો.",
+    "codeSentEmail": "તમારા નોંધાયેલ ઇમેઇલ સરનામા પર 6 અંકનો કોડ મોકલાયો છે. નીચે દાખલ કરો.",
+    "enterCode": "6 અંકનો કોડ",
+    "verifyNow": "ચકાસો",
+    "noEmailOnRecord": "કોઇ ઇમેઇલ નોંધાયેલો નથી",
+    "noMobileOnRecord": "તમારો નંબર ઉમેરવા તમારી ડેયરીને કહો"
   },
   "products": {
     "eyebrow": "ખેતરમાંથી તાજા ડેરી ઉત્પાદનો",
@@ -286,5 +307,22 @@
     "title": "સૂચનાઓ",
     "markAllRead": "બધી વંચાયેલ તરીકે ચિહ્નિત કરો",
     "noNotifications": "હાલમાં કોઈ નવી સૂચના નથી."
+  },
+  "theme": {
+    "label": "થીમ",
+    "light": "લાઇટ",
+    "dark": "ડાર્ક",
+    "system": "સિસ્ટમ",
+    "switchTo": "બદલો"
+  },
+  "palette": {
+    "label": "કમાન્ડ પેલેટ",
+    "open": "કમાન્ડ પેલેટ ખોલો",
+    "search": "પેજ અને ગ્રાહકો શોધો",
+    "placeholder": "શોધો અથવા જાઓ…",
+    "noResults": "કોઈ પરિણામ નહીં. ગ્રાહકનું નામ અથવા પેજ અજમાવો.",
+    "addCustomer": "ગ્રાહક ઉમેરો",
+    "recordDelivery": "દૂધની ડિલિવરી નોંધો",
+    "generateBill": "બિલ બનાવો"
   }
 }

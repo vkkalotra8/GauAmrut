@@ -31,7 +31,7 @@ test('dairy edits customer details, customer claims history and sees only the cu
   await page.getByRole('button', { name: 'Verify & get started' }).click();
   await page.getByRole('radio', { name: /Claim Existing Customer/ }).check();
   await page.getByRole('button', { name: 'Confirm & connect' }).click();
-  await expect(page.getByRole('heading', { name: 'Hello, Existing.' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Welcome, Existing' })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Customers', exact: true })).toHaveCount(0);
   await page.getByRole('link', { name: 'Delivery history', exact: true }).first().click();
   await expect(page.getByRole('cell', { name: '₹90.00', exact: true })).toBeVisible();
@@ -41,8 +41,8 @@ test('dairy edits customer details, customer claims history and sees only the cu
   await page.getByLabel('Your name', { exact: true }).fill('Updated Customer');
   await page.getByLabel('Delivery address').fill('Updated address');
   await page.getByRole('button', { name: 'Save profile' }).click();
-  await expect(page.getByText('Your profile has been updated.')).toBeVisible();
+  await expect(page.getByText('Profile details updated.')).toBeVisible();
   await page.getByRole('link', { name: 'Bills & payments', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Your bills & payments' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Bills & payments' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Generate bill' })).toHaveCount(0);
 });

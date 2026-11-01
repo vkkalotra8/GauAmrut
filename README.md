@@ -2,6 +2,10 @@
 
 A full-stack dairy delivery and billing application, developed from [GAUAMRUT_SRS.docx](GAUAMRUT_SRS.docx). The vendor core and first customer-onboarding increment are implemented. This is not the complete production release described in the SRS.
 
+## Interface
+
+The UI is responsive (usable down to 320px) and includes: a light/dark theme toggle (Light · Dark · Follow system, persisted per browser), a milk-delivery trend chart and collections donut chart on the dashboard and bills pages, loading skeletons and animated stat cards (all motion respects the OS reduced-motion setting), a command palette for quick navigation and customer search (**Ctrl/Cmd + K**, desktop), and a mobile quick-action button plus bottom navigation for vendor workflows on small screens.
+
 ## Run locally on Windows
 
 Prerequisites: Node.js 24, npm, and `mongod` on PATH. MongoDB must run as a replica set for transactions.
@@ -102,7 +106,7 @@ The API contract is [docs/openapi.json](docs/openapi.json), generated with `node
 
 `frontend/` contains the static React application. `backend/src/` separates validation, authentication, middleware, domain rules, transactional services, and Mongoose repositories/models. `scripts/` contains local setup tools. `docs/` contains the API contract and implementation status.
 
-Vercel: root `frontend`, install `npm ci`, build `npm run build`, output `dist`; set `VITE_API_URL` to the Render HTTPS API URL ending in `/api`. Render: use `render.yaml`, supply MongoDB Atlas replica-set URI, Redis, SMTP, and exact frontend origins. Deployments have not been created or published. CI/branch protection and production environment configuration still require repository/platform setup.
+Vercel: root `frontend`, install `npm ci`, build `npm run build`, output `dist`; set `VITE_API_URL` to the Render HTTPS API URL ending in `/api`. Render: use `render.yaml`, supply MongoDB Atlas replica-set URI, Redis, SMTP, metrics token and exact frontend origins. The deployment template runs controlled migrations before startup; production refuses pending migrations and never creates indexes implicitly. Follow [docs/PRODUCTION_RUNBOOK.md](docs/PRODUCTION_RUNBOOK.md) for backup/restore, monitoring, staging, rollback and account-owner release gates. Deployments and external provider configuration still require the authorized account owner.
 
 Security audit findings required newer Vite, React Router, Vitest, and Nodemailer versions than the SRS baseline. React 18, Express 4/CommonJS, Mongoose, Redux Toolkit, Axios, and Tailwind remain. Installed versions are reproducible through the three lockfiles. Secrets belong only in ignored local `.env` files or hosting environment stores.
 

@@ -1,17 +1,23 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useSelector } from 'react-redux';
 import { useTranslation } from 'react-i18next';
-import { Plus, Check, Search, Receipt, AlertCircle, FileText, CheckCircle2, XCircle, Printer, RotateCcw, Download } from 'lucide-react';
+import { Plus, Check, Search, Receipt, AlertCircle, FileText, CheckCircle2, XCircle, Printer, RotateCcw, Download, Send } from 'lucide-react';
+import { CollectionsDonut } from '../../components/charts';
 import { Heading, Notice, State, Empty, Modal, Field } from '../../components/ui';
-import { api, money, message, decimalUnits } from '../../lib';
+import ShareToWhatsAppModal from '../../components/ShareToWhatsApp';
+import ShareReportButton from '../../components/ShareReportButton';
+import { api, money, message, decimalUnits, serviceDate } from '../../lib';
 import useData from '../../hooks/useData';
+import { usePlatformSettings } from '../../platform';
 import { demoBills, demoCustomers, demoClaims, demoAdjustments, demoPayments } from '../../demo';
 
 export default function Payments() {
   const { t } = useTranslation();
   const demo = useSelector(s => s.session.demo);
+  const platform = usePlatformSettings();
   const [activeTab, setActiveTab] = useState('bills');
   const [page, setPage] = useState(1);
+  const currentMonth = serviceDate().slice(0, 7);
   const bills = useData(`/bills?page=${page}`, demoBills);
   const customers = useData('/customers?limit=100', demoCustomers);
   const claims = useData('/payment-claims', demoClaims);
@@ -20,23 +26,38 @@ export default function Payments() {
 
   const [modal, setModal] = useState(null);
   const [rejectingClaim, setRejectingClaim] = useState(null);
+  const [verifyingClaim, setVerifyingClaim] = useState(null);
   const [reversingPayment, setReversingPayment] = useState(null);
   const [reversingAdjustment, setReversingAdjustment] = useState(null);
   const [adjustmentModal, setAdjustmentModal] = useState(false);
   const [selectedAdjCustomer, setSelectedAdjCustomer] = useState('');
   const [activeReceipt, setActiveReceipt] = useState(null);
+  const [currentStatements, setCurrentStatements] = useState([]);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
   const [key, setKey] = useState('');
 
+  const [paymentMethod, setPaymentMethod] = useState('cash');
+  // Current-month (till-date) statements for every customer, so a dairy can view
+  // and download a bill before the month closes.
+  useEffect(() => {
+    if (demo || activeTab !== 'bills') return;
+    let cancelled = false;
+    api.get(`/bills/statements?month=${currentMonth}`)
+      .then(res => { if (!cancelled) setCurrentStatements(res.data.data || []); })
+      .catch(() => { if (!cancelled) setCurrentStatements([]); });
+    return () => { cancelled = true; };
+  }, [currentMonth, activeTab, demo]);
+
   const open = value => {
     setModal(value);
+    setPaymentMethod('cash');
     setError('');
     setKey('pay-' + Math.floor(Math.random() * 1000000000));
   };
 
-  const pendingClaimsCount = claims.data?.filter(c => c.status === 'pending').length || 0;
+  const pendingClaimsCount = claims.data?.filter(c => ['pending', 'reconciliation_required'].includes(c.status)).length || 0;
 
   async function handleBatchGenerate() {
     if (demo) {
@@ -47,10 +68,12 @@ export default function Payments() {
     setError('');
     try {
       const res = await api.post('/bills/batch-generate', {});
+      const d = res.data.data;
       setNotice(t('payments.batchSuccess', {
-        generated: res.data.data.generated,
-        skipped: res.data.data.skipped,
-        defaultValue: `Batch billing finished: ${res.data.data.generated} bills generated, ${res.data.data.skipped} skipped.`
+        generated: d.generated,
+        updated: d.updated ?? 0,
+        skipped: d.skipped,
+        defaultValue: `Batch billing finished: ${d.generated} bills generated, ${d.updated ?? 0} updated, ${d.skipped} skipped.`
       }));
       bills.reload();
     } catch (e) {
@@ -72,7 +95,7 @@ export default function Payments() {
       const f = Object.fromEntries(new FormData(e.currentTarget));
       const body = modal === 'bill' ? f : { bill_id: modal._id, amountPaise: decimalUnits(f.amount), method: f.method, ...(f.reference ? { reference: f.reference } : {}) };
       const r = await api.post(modal === 'bill' ? '/bills' : '/payments', body, { headers: { 'Idempotency-Key': key } });
-      setNotice(modal === 'bill' ? t('payments.billFinalized', 'Monthly bill finalized with carry-forward accounting.') : `${t('payments.paymentRecorded', 'Payment recorded.')} ${t('payments.receiptLabel', 'Receipt')}: ${r.data.data.receipt}`);
+      setNotice(modal === 'bill' ? t('payments.billFinalized', 'Monthly bill generated with carry-forward accounting. It refreshes whenever entries change.') : `${t('payments.paymentRecorded', 'Payment recorded.')} ${t('payments.receiptLabel', 'Receipt')}: ${r.data.data.receipt}`);
       setModal(null);
       bills.reload();
       payments.reload();
@@ -92,13 +115,18 @@ export default function Payments() {
     setBusy(true);
     setError('');
     try {
-      const res = await api.patch(`/payment-claims/${claimId}/review`, { action, ...(reason ? { reason } : {}) });
+      const res = await api.patch(`/payment-claims/${claimId}/review`, { action, ...(action === 'approve' ? { settlementConfirmed: true } : {}), ...(reason ? { reason } : {}) });
       setRejectingClaim(null);
+      setVerifyingClaim(null);
       claims.reload();
       bills.reload();
       payments.reload();
-      if (action === 'approve') {
-        setNotice(t('payments.claimApprovedNotice', 'Payment claim approved and receipt issued.'));
+      if (res.data.data?.reconciliationRequired) {
+        setNotice('Payment was not applied. The claim now requires reconciliation because the bill balance changed.');
+      } else if (action === 'approve') {
+        setNotice(res.data.data?.replayed
+          ? 'This claim was already approved; the existing receipt was returned without another ledger entry.'
+          : t('payments.claimApprovedNotice', 'Payment claim approved and receipt issued.'));
         if (res.data.data?.payment) {
           viewReceipt(res.data.data.payment._id);
         }
@@ -212,19 +240,68 @@ export default function Payments() {
     }
   }
 
-  async function downloadBillPdf(billId, month) {
+  async function fetchBillPdf(bill) {
+    // Finalized bills download by id; a customer's in-progress month uses the statement.
+    const endpoint = bill._id ? `/bills/${bill._id}/pdf` : `/bills/statement.pdf?month=${bill.month}&customer_id=${bill.customer_id}`;
+    const r = await api.get(endpoint, { responseType: 'blob' });
+    return { blob: r.data, filename: `bill-${bill.month}${bill.provisional ? '-till-date' : ''}.pdf` };
+  }
+
+  const [shareBill, setShareBill] = useState(null);
+
+  async function downloadBillPdf(bill) {
     try {
-      const r = await api.get(`/bills/${billId}/pdf`, { responseType: 'blob' });
-      const url = URL.createObjectURL(r.data);
+      const { blob, filename } = await fetchBillPdf(bill);
+      const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `bill-${month}.pdf`;
+      a.download = filename;
       a.click();
       URL.revokeObjectURL(url);
     } catch (err) {
       setNotice(message(err));
     }
   }
+
+  async function shareBillPdf(bill) {
+    try {
+      const { blob, filename } = await fetchBillPdf(bill);
+      setShareBill({ blob, filename });
+    } catch (err) {
+      setNotice(message(err));
+    }
+  }
+
+  const customerNameOf = id => customers.data?.find(c => c._id === id)?.name || id;
+  const pastBills = (bills.data || []).filter(b => b.month !== currentMonth);
+
+  // Current-month (till-date) statement per customer: use the finalized bill for
+  // this month if one exists, otherwise fall back to the live statement feed.
+  const currentRows = useMemo(() => {
+    const byCustomer = new Map();
+    for (const b of bills.data || []) {
+      if (b.month === currentMonth) byCustomer.set(b.customer_id, { bill: b, provisional: false });
+    }
+    for (const s of currentStatements) {
+      if (!byCustomer.has(s.customer_id)) byCustomer.set(s.customer_id, { bill: s, provisional: true });
+    }
+    return [...byCustomer.values()];
+  }, [bills.data, currentStatements, currentMonth]);
+
+  const billRows = [
+    ...currentRows.map(({ bill, provisional }) => ({
+      key: `current-${bill.customer_id}`,
+      customerName: customerNameOf(bill.customer_id),
+      provisional,
+      bill: { ...bill, customer_id: bill.customer_id }
+    })),
+    ...pastBills.map(b => ({
+      key: b._id,
+      customerName: customerNameOf(b.customer_id),
+      provisional: false,
+      bill: b
+    }))
+  ];
 
   return (
     <>
@@ -249,7 +326,7 @@ export default function Payments() {
       <Notice>{notice}</Notice>
       {error && <Notice error>{error}</Notice>}
 
-      <div className="tab-nav" style={{ display: 'flex', gap: '8px', marginBottom: '20px', borderBottom: '1px solid var(--border)', paddingBottom: '8px' }}>
+      <div className="tab-nav">
         <button
           type="button"
           className={`button small ${activeTab === 'bills' ? 'primary' : ''}`}
@@ -265,9 +342,7 @@ export default function Payments() {
         >
           {t('payments.claimsTab', 'Customer payment claims')}
           {pendingClaimsCount > 0 && (
-            <span style={{ marginLeft: '6px', background: '#d97706', color: '#fff', borderRadius: '10px', padding: '1px 6px', fontSize: '10px' }}>
-              {pendingClaimsCount}
-            </span>
+            <span className="count-badge">{pendingClaimsCount}</span>
           )}
         </button>
         <button
@@ -292,8 +367,9 @@ export default function Payments() {
             <h2>{t('payments.monthlyBillsHeading', 'Monthly customer bills')}</h2>
             <span className="pill">INR · ₹ (Paise Accounting)</span>
           </div>
+          {bills.data?.length > 0 && <CollectionsDonut bills={bills.data}/>}
           <State resource={bills}>
-            {bills.data?.length ? (
+            {billRows.length ? (
               <div className="table-scroll">
                 <table>
                   <thead>
@@ -308,10 +384,19 @@ export default function Payments() {
                     </tr>
                   </thead>
                   <tbody>
-                    {bills.data.map(b => (
-                      <tr key={b._id}>
-                        <td><b>{customers.data?.find(c => c._id === b.customer_id)?.name || b.customer_id}</b></td>
-                        <td>{b.month}</td>
+                    {billRows.map(row => {
+                      const b = row.bill;
+                      return (
+                      <tr key={row.key}>
+                        <td><b>{row.customerName}</b></td>
+                        <td>
+                          {b.month}
+                          {row.provisional && (
+                            <span className="pill pending" style={{ marginLeft: '6px' }}>
+                              {t('payments.tillDate', 'Till date')}
+                            </span>
+                          )}
+                        </td>
                         <td>{money(b.openingPaise)}</td>
                         <td>{money(b.chargesPaise)}</td>
                         <td>{money(b.paidPaise)}</td>
@@ -323,21 +408,43 @@ export default function Payments() {
                               className="text-button"
                               style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}
                               title="Download PDF Bill"
-                              onClick={() => downloadBillPdf(b._id, b.month)}
+                              onClick={() => downloadBillPdf(b)}
                             >
                               <Download size={14} /> PDF
                             </button>
-                            {b.closingPaise > 0 ? (
+                            <ShareReportButton
+                              fetchReport={() => fetchBillPdf(b)}
+                              shareText="Milk bill — GauAmrut"
+                              className="text-button"
+                              style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                              label="Share"
+                              iconSize={14}
+                              busyLabel="Preparing…"
+                              title="Share PDF bill on WhatsApp"
+                              onNotice={setNotice}
+                              onError={setError}
+                            />
+                            <button
+                              type="button"
+                              className="text-button"
+                              style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                              title="Send this PDF bill to a WhatsApp number"
+                              onClick={() => shareBillPdf(b)}
+                            >
+                              <Send size={14} /> Send to number
+                            </button>
+                            {!row.provisional && (b.closingPaise > 0 ? (
                               <button type="button" className="button small" onClick={() => open(b)}>
                                 {t('payments.recordPayment', 'Record payment')}
                               </button>
                             ) : (
                               <span className="status"><Check size={13} /> {t('payments.paidStatus', 'Settled')}</span>
-                            )}
+                            ))}
                           </div>
                         </td>
                       </tr>
-                    ))}
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -345,6 +452,7 @@ export default function Payments() {
               <Empty>{t('payments.noBills', 'No bills yet. Finalize a completed month to start collecting payments.')}</Empty>
             )}
           </State>
+          {platform?.invoice?.footer && <p className="invoice-footer-note">{platform.invoice.footer}</p>}
         </section>
       )}
 
@@ -362,6 +470,7 @@ export default function Payments() {
                     <tr>
                       <th>{t('common.customer', 'Customer')}</th>
                       <th>{t('common.date', 'Date')}</th>
+                      <th>Bill / current balance</th>
                       <th>{t('common.amount', 'Amount')}</th>
                       <th>{t('payments.method', 'Method')}</th>
                       <th>{t('payments.reference', 'Reference (UTR)')}</th>
@@ -375,31 +484,32 @@ export default function Payments() {
                       <tr key={c._id}>
                         <td><b>{c.customerName || 'Customer'}</b></td>
                         <td>{new Date(c.createdAt).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' })}</td>
+                        <td>{c.billMonth || 'Unallocated'}<small style={{ display: 'block' }}>{c.currentBillBalancePaise == null ? '' : money(c.currentBillBalancePaise)}</small></td>
                         <td><b>{money(c.amountPaise)}</b></td>
                         <td className="capitalize">{c.method}</td>
                         <td><code>{c.reference}</code></td>
                         <td>{c.notes || '—'}</td>
                         <td>
-                          <span className={`status ${c.status === 'approved' ? '' : c.status === 'rejected' ? 'neutral' : ''}`} style={c.status === 'pending' ? { background: '#fef3c7', color: '#92400e' } : {}}>
+                          <span className={`status ${c.status === 'approved' ? 'success' : c.status === 'rejected' ? 'danger' : 'pending'}`}>
                             {c.status}
                           </span>
-                          {c.rejectionReason && <small style={{ display: 'block', color: '#b91c1c' }}>{c.rejectionReason}</small>}
+                          {c.rejectionReason && <small className="danger-text" style={{ display: 'block' }}>{c.rejectionReason}</small>}
                         </td>
                         <td>
-                          {c.status === 'pending' && (
+                          {c.reconciliationNotes && <small className="danger-text" style={{ display: 'block' }}>{c.reconciliationNotes}</small>}
+                          {['pending', 'reconciliation_required'].includes(c.status) && (
                             <div style={{ display: 'flex', gap: '6px' }}>
                               <button
                                 type="button"
                                 className="button small primary"
                                 disabled={busy}
-                                onClick={() => handleReviewClaim(c._id, 'approve')}
+                                onClick={() => setVerifyingClaim(c)}
                               >
                                 <CheckCircle2 size={14} /> {t('payments.approveClaim', 'Approve')}
                               </button>
                               <button
                                 type="button"
-                                className="button small"
-                                style={{ color: '#b91c1c', borderColor: '#fca5a5' }}
+                                className="button small danger-ghost"
                                 disabled={busy}
                                 onClick={() => setRejectingClaim(c)}
                               >
@@ -452,11 +562,11 @@ export default function Payments() {
                         <td>
                           {p.reversed ? (
                             <div>
-                              <span className="status neutral" style={{ background: '#fef2f2', color: '#991b1b', borderColor: '#fecaca' }}>
+                              <span className="status danger">
                                 {t('payments.reversedBadge', 'Reversed')}
                               </span>
                               {p.reversalReason && (
-                                <small style={{ display: 'block', color: '#991b1b', fontSize: '11px', marginTop: '2px', maxWidth: '180px' }}>
+                                <small className="danger-text" style={{ display: 'block', fontSize: '11px', marginTop: '2px', maxWidth: '180px' }}>
                                   {p.reversalReason}
                                 </small>
                               )}
@@ -473,8 +583,7 @@ export default function Payments() {
                             {!p.reversed && (
                               <button
                                 type="button"
-                                className="button small"
-                                style={{ color: '#b91c1c', borderColor: '#fca5a5' }}
+                                className="button small danger-ghost"
                                 onClick={() => { setReversingPayment(p); setError(''); }}
                               >
                                 <RotateCcw size={14} /> {t('payments.reversePayment', 'Reverse')}
@@ -525,40 +634,40 @@ export default function Payments() {
                   </thead>
                   <tbody>
                     {adjustments.data.map(adj => {
-                      const typeStyles = {
-                        credit: { bg: '#ecfdf5', text: '#065f46', border: '#a7f3d0' },
-                        waiver: { bg: '#f0fdfa', text: '#0f766e', border: '#99f6e4' },
-                        debit: { bg: '#fffbeb', text: '#92400e', border: '#fde68a' },
-                        refund: { bg: '#eff6ff', text: '#1d4ed8', border: '#bfdbfe' }
-                      }[adj.type] || { bg: '#f3f4f6', text: '#374151', border: '#e5e7eb' };
+                      const typeClass = {
+                        credit: 'success',
+                        waiver: 'info',
+                        debit: 'pending',
+                        refund: 'info'
+                      }[adj.type] || 'neutral';
 
                       return (
                         <tr key={adj._id}>
                           <td>{new Date(adj.createdAt).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' })}</td>
                           <td><b>{adj.customerName || customers.data?.find(c => c._id === adj.customer_id)?.name || 'Customer'}</b></td>
                           <td>
-                            <span className="pill" style={{ background: typeStyles.bg, color: typeStyles.text, borderColor: typeStyles.border, textTransform: 'capitalize', fontWeight: '600', fontSize: '11px' }}>
+                            <span className={`pill ${typeClass}`} style={{ textTransform: 'capitalize', fontWeight: '600', fontSize: '11px' }}>
                               {adj.type}
                             </span>
                           </td>
                           <td>
-                            <b style={{ color: adj.type === 'debit' || adj.type === 'refund' ? '#b91c1c' : 'var(--primary)' }}>
+                            <b style={{ color: adj.type === 'debit' || adj.type === 'refund' ? 'var(--destructive-soft-foreground)' : 'var(--success-foreground)' }}>
                               {adj.type === 'debit' || adj.type === 'refund' ? '+' : '-'}{money(adj.amountPaise)}
                             </b>
                           </td>
                           <td style={{ maxWidth: '220px' }}>
                             <div>{adj.reason}</div>
-                            {adj.reference && <small style={{ color: 'var(--muted)', display: 'block' }}>Ref: {adj.reference}</small>}
+                            {adj.reference && <small style={{ color: 'var(--muted-foreground)', display: 'block' }}>Ref: {adj.reference}</small>}
                           </td>
-                          <td>{adj.billMonth ? <code>{adj.billMonth}</code> : <span style={{ color: 'var(--muted)' }}>Account</span>}</td>
+                          <td>{adj.billMonth ? <code>{adj.billMonth}</code> : <span style={{ color: 'var(--muted-foreground)' }}>Account</span>}</td>
                           <td>
                             {adj.status === 'reversed' ? (
                               <div>
-                                <span className="status neutral" style={{ background: '#fef2f2', color: '#991b1b', borderColor: '#fecaca' }}>
+                                <span className="status danger">
                                   {t('payments.reversedBadge', 'Reversed')}
                                 </span>
                                 {adj.reversalReason && (
-                                  <small style={{ display: 'block', color: '#991b1b', fontSize: '11px', marginTop: '2px', maxWidth: '160px' }}>
+                                  <small className="danger-text" style={{ display: 'block', fontSize: '11px', marginTop: '2px', maxWidth: '160px' }}>
                                     {adj.reversalReason}
                                   </small>
                                 )}
@@ -571,8 +680,7 @@ export default function Payments() {
                             {adj.status !== 'reversed' && (
                               <button
                                 type="button"
-                                className="button small"
-                                style={{ color: '#b91c1c', borderColor: '#fca5a5' }}
+                                className="button small danger-ghost"
                                 onClick={() => { setReversingAdjustment(adj); setError(''); }}
                               >
                                 <RotateCcw size={14} /> {t('payments.reverseAdjustment', 'Reverse')}
@@ -592,6 +700,39 @@ export default function Payments() {
         </section>
       )}
 
+      {verifyingClaim && (
+        <Modal title="Verify received payment" close={() => setVerifyingClaim(null)}>
+          <div className="note-strip">
+            <b>Check the receiving bank or UPI account before approval.</b>
+            <p>This app cannot verify settlement automatically. Confirm that this exact transaction is visible in the dairy account.</p>
+          </div>
+          <dl className="receipt-details">
+            <div><dt>Customer</dt><dd>{verifyingClaim.customerName}</dd></div>
+            <div><dt>Bill</dt><dd>{verifyingClaim.billMonth || 'Unallocated'}</dd></div>
+            <div><dt>Claimed amount</dt><dd>{money(verifyingClaim.amountPaise)}</dd></div>
+            <div><dt>Current bill balance</dt><dd>{verifyingClaim.currentBillBalancePaise == null ? 'Unavailable' : money(verifyingClaim.currentBillBalancePaise)}</dd></div>
+            <div><dt>Method</dt><dd className="capitalize">{verifyingClaim.method}</dd></div>
+            <div><dt>UTR / reference</dt><dd><code>{verifyingClaim.reference}</code></dd></div>
+          </dl>
+          {verifyingClaim.reconciliationNotes && <Notice error>{verifyingClaim.reconciliationNotes}</Notice>}
+          <label className="check-row">
+            <input type="checkbox" required form="verify-payment-claim" />
+            <span>I checked the actual receiving account and confirmed this amount and reference were received.</span>
+          </label>
+          <form id="verify-payment-claim" onSubmit={e => {
+            e.preventDefault();
+            handleReviewClaim(verifyingClaim._id, 'approve');
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '16px' }}>
+              <button type="button" className="button" onClick={() => setVerifyingClaim(null)}>Cancel</button>
+              <button type="submit" className="button primary" disabled={busy}>
+                <CheckCircle2 size={14} /> {busy ? 'Verifying...' : 'Confirm received and approve'}
+              </button>
+            </div>
+          </form>
+        </Modal>
+      )}
+
       {/* Rejection Reason Modal */}
       {rejectingClaim && (
         <Modal title={t('payments.rejectModalTitle', 'Reject payment claim')} close={() => setRejectingClaim(null)}>
@@ -608,7 +749,7 @@ export default function Payments() {
               <button type="button" className="button" onClick={() => setRejectingClaim(null)}>
                 {t('common.cancel', 'Cancel')}
               </button>
-              <button type="submit" className="button primary" style={{ background: '#b91c1c', borderColor: '#b91c1c' }} disabled={busy}>
+              <button type="submit" className="button danger" disabled={busy}>
                 {busy ? t('common.saving', 'Saving…') : t('payments.confirmReject', 'Confirm rejection')}
               </button>
             </div>
@@ -624,10 +765,10 @@ export default function Payments() {
             const reason = new FormData(e.currentTarget).get('reason');
             handleReversePayment(reversingPayment._id, reason);
           }}>
-            <div style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#991b1b', padding: '12px', borderRadius: '8px', marginBottom: '14px', fontSize: '13px' }}>
+            <div className="danger-note" style={{ marginBottom: '14px', fontSize: '13px' }}>
               <b>⚠️ {t('payments.reversePaymentWarning', "Reversing this payment will restore the customer's outstanding balance on their monthly bill.")}</b>
             </div>
-            <div style={{ background: '#f8fafc', padding: '10px 14px', borderRadius: '6px', marginBottom: '14px', fontSize: '13px', display: 'flex', justifyContent: 'space-between' }}>
+            <div className="note-strip" style={{ marginBottom: '14px', fontSize: '13px', display: 'flex', justifyContent: 'space-between' }}>
               <span>{t('payments.receiptLabel', 'Receipt #')}: <code>{reversingPayment.receipt}</code></span>
               <span>{t('common.amount', 'Amount')}: <b>{money(reversingPayment.amountPaise)}</b></span>
             </div>
@@ -637,7 +778,7 @@ export default function Payments() {
               <button type="button" className="button" onClick={() => setReversingPayment(null)}>
                 {t('common.cancel', 'Cancel')}
               </button>
-              <button type="submit" className="button primary" style={{ background: '#b91c1c', borderColor: '#b91c1c' }} disabled={busy}>
+              <button type="submit" className="button danger" disabled={busy}>
                 {busy ? t('common.saving', 'Saving…') : t('payments.confirmReversePayment', 'Confirm payment reversal')}
               </button>
             </div>
@@ -653,10 +794,10 @@ export default function Payments() {
             const reason = new FormData(e.currentTarget).get('reason');
             handleReverseAdjustment(reversingAdjustment._id, reason);
           }}>
-            <div style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#991b1b', padding: '12px', borderRadius: '8px', marginBottom: '14px', fontSize: '13px' }}>
+            <div className="danger-note" style={{ marginBottom: '14px', fontSize: '13px' }}>
               <b>⚠️ {t('payments.reverseAdjustmentWarning', "Reversing this adjustment will restore the previous balance on the customer's bill.")}</b>
             </div>
-            <div style={{ background: '#f8fafc', padding: '10px 14px', borderRadius: '6px', marginBottom: '14px', fontSize: '13px', display: 'flex', justifyContent: 'space-between' }}>
+            <div className="note-strip" style={{ marginBottom: '14px', fontSize: '13px', display: 'flex', justifyContent: 'space-between' }}>
               <span className="capitalize"><b>{reversingAdjustment.type}</b></span>
               <span><b>{money(reversingAdjustment.amountPaise)}</b></span>
             </div>
@@ -666,7 +807,7 @@ export default function Payments() {
               <button type="button" className="button" onClick={() => setReversingAdjustment(null)}>
                 {t('common.cancel', 'Cancel')}
               </button>
-              <button type="submit" className="button primary" style={{ background: '#b91c1c', borderColor: '#b91c1c' }} disabled={busy}>
+              <button type="submit" className="button danger" disabled={busy}>
                 {busy ? t('common.saving', 'Saving…') : t('payments.confirmReverseAdjustment', 'Confirm adjustment reversal')}
               </button>
             </div>
@@ -720,12 +861,12 @@ export default function Payments() {
 
       {/* Bill & Payment Modal */}
       {modal && (
-        <Modal title={modal === 'bill' ? t('payments.finalizeBillTitle', 'Finalize a monthly bill') : t('payments.recordPaymentTitle', 'Record a payment')} close={() => setModal(null)}>
+        <Modal title={modal === 'bill' ? t('payments.finalizeBillTitle', 'Generate a monthly bill') : t('payments.recordPaymentTitle', 'Record a payment')} close={() => { setModal(null); setError(''); }}>
           <form onSubmit={save} onChange={() => setKey('pay-' + Math.floor(Math.random() * 1000000000))}>
             {modal === 'bill' ? (
               <>
                 <p className="form-note">
-                  {t('payments.carryForwardNote', 'Finalizing locks delivery entries. Unpaid balance from the prior month automatically rolls into opening balance.')}
+                  {t('payments.carryForwardNote', 'Bills can be generated at any time and refresh with your latest deliveries. Unpaid balance from the prior month rolls into the opening balance.')}
                 </p>
                 <label className="field">
                   <span>{t('payments.selectCustomer', 'Customer')}</span>
@@ -736,7 +877,7 @@ export default function Payments() {
                     ))}
                   </select>
                 </label>
-                <Field label={t('payments.billingMonthLabel', 'Completed billing month')} name="month" type="month" required />
+                <Field label={t('payments.billingMonthLabel', 'Billing month')} name="month" type="month" max={serviceDate().slice(0, 7)} required />
               </>
             ) : (
               <>
@@ -746,18 +887,18 @@ export default function Payments() {
                 <Field label={t('payments.amountReceivedLabel', 'Amount received (₹)')} name="amount" type="number" min="0.01" max={modal.closingPaise / 100} step="0.01" required />
                 <label className="field">
                   <span>{t('payments.paymentMethod', 'Payment method')}</span>
-                  <select name="method">
+                  <select name="method" value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)}>
                     <option value="cash">{t('payments.methodCash', 'Cash')}</option>
                     <option value="upi">{t('payments.methodUpi', 'UPI')}</option>
                     <option value="bank">{t('payments.methodBank', 'Bank transfer')}</option>
                   </select>
                 </label>
-                <Field label={t('payments.referenceLabel', 'Transaction reference (required for UPI / bank)')} name="reference" />
+                <Field label={t('payments.referenceLabel', 'Transaction reference (required for UPI / bank)')} name="reference" required={paymentMethod !== 'cash'} minLength={paymentMethod !== 'cash' ? 3 : undefined} maxLength={100} pattern="[A-Za-z0-9][A-Za-z0-9._/-]*" title="Use letters, numbers, dots, underscores, slashes, or hyphens." />
               </>
             )}
             {error && <Notice error>{error}</Notice>}
             <button className="button primary full" disabled={busy}>
-              {busy ? t('common.saving', 'Saving…') : modal === 'bill' ? t('payments.confirmBill', 'Confirm & finalize bill') : t('payments.confirmPayment', 'Confirm payment received')}
+              {busy ? t('common.saving', 'Saving…') : modal === 'bill' ? t('payments.confirmBill', 'Confirm & generate bill') : t('payments.confirmPayment', 'Confirm payment received')}
             </button>
           </form>
         </Modal>
@@ -766,40 +907,40 @@ export default function Payments() {
       {/* Digital Receipt Modal */}
       {activeReceipt && (
         <Modal title={t('payments.receiptTitle', 'Payment Receipt')} close={() => setActiveReceipt(null)}>
-          <div className="receipt-card" style={{ padding: '20px', border: '1px solid var(--border)', borderRadius: '12px', background: '#fdfdfd' }}>
+          <div className="receipt-card">
             {activeReceipt.reversed && (
-              <div style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#991b1b', padding: '10px 14px', borderRadius: '8px', marginBottom: '14px', fontSize: '13px' }}>
+              <div className="danger-note" style={{ padding: '10px 14px', marginBottom: '14px', fontSize: '13px' }}>
                 <b>⚠️ {t('payments.reversedBadge', 'REVERSED')}</b> — {activeReceipt.reversalReason || 'This payment receipt was reversed by the dairy.'}
                 {activeReceipt.reversedAt && <small style={{ display: 'block', marginTop: '2px', opacity: 0.9 }}>{new Date(activeReceipt.reversedAt).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}</small>}
               </div>
             )}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '1px dashed var(--border)', paddingBottom: '14px', marginBottom: '14px' }}>
               <div>
-                <b style={{ fontSize: '18px', color: 'var(--primary)' }}>{activeReceipt.dairy?.businessName}</b>
-                <div style={{ fontSize: '12px', color: 'var(--muted)' }}>{activeReceipt.dairy?.ownerName} · {activeReceipt.dairy?.phone}</div>
-                {activeReceipt.dairy?.upiId && <div style={{ fontSize: '12px', color: 'var(--muted)' }}>UPI: {activeReceipt.dairy.upiId}</div>}
+                <b style={{ fontSize: '18px', color: 'var(--success-foreground)' }}>{activeReceipt.dairy?.businessName}</b>
+                <div style={{ fontSize: '12px', color: 'var(--muted-foreground)' }}>{activeReceipt.dairy?.ownerName} · {activeReceipt.dairy?.phone}</div>
+                {activeReceipt.dairy?.upiId && <div style={{ fontSize: '12px', color: 'var(--muted-foreground)' }}>UPI: {activeReceipt.dairy.upiId}</div>}
               </div>
               <div style={{ textAlign: 'right' }}>
-                <span className="pill" style={{ background: activeReceipt.reversed ? '#fef2f2' : '#ecfdf5', color: activeReceipt.reversed ? '#991b1b' : '#065f46', borderColor: activeReceipt.reversed ? '#fecaca' : '#a7f3d0' }}>
+                <span className={`pill ${activeReceipt.reversed ? 'danger' : 'success'}`}>
                   {activeReceipt.reversed ? `✕ ${t('payments.reversedBadge', 'REVERSED')}` : `✓ ${t('payments.verifiedReceipt', 'VERIFIED RECEIPT')}`}
                 </span>
-                <div style={{ fontSize: '11px', color: 'var(--muted)', marginTop: '4px' }}><code>{activeReceipt.receipt}</code></div>
+                <div style={{ fontSize: '11px', color: 'var(--muted-foreground)', marginTop: '4px' }}><code>{activeReceipt.receipt}</code></div>
               </div>
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', fontSize: '13px', marginBottom: '16px' }}>
               <div>
-                <span style={{ color: 'var(--muted)', display: 'block', fontSize: '11px' }}>{t('common.customer', 'Customer')}</span>
+                <span style={{ color: 'var(--muted-foreground)', display: 'block', fontSize: '11px' }}>{t('common.customer', 'Customer')}</span>
                 <b>{activeReceipt.customer?.name}</b>
-                <div style={{ fontSize: '12px', color: 'var(--muted)' }}>{activeReceipt.customer?.phone}</div>
+                <div style={{ fontSize: '12px', color: 'var(--muted-foreground)' }}>{activeReceipt.customer?.phone || 'No phone on file'}</div>
               </div>
               <div>
-                <span style={{ color: 'var(--muted)', display: 'block', fontSize: '11px' }}>{t('common.date', 'Payment Date')}</span>
+                <span style={{ color: 'var(--muted-foreground)', display: 'block', fontSize: '11px' }}>{t('common.date', 'Payment Date')}</span>
                 <b>{new Date(activeReceipt.date).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}</b>
               </div>
             </div>
 
-            <div style={{ background: '#f8fafc', padding: '12px 16px', borderRadius: '8px', marginBottom: '16px' }}>
+            <div className="note-strip" style={{ marginBottom: '16px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
                 <span>{t('payments.method', 'Payment Method')}:</span>
                 <b className="capitalize">{activeReceipt.method}</b>
@@ -818,18 +959,24 @@ export default function Payments() {
               )}
               <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid var(--border)', paddingTop: '8px', marginTop: '6px' }}>
                 <span style={{ fontSize: '15px', fontWeight: '600' }}>{t('common.amount', 'Amount Paid')}:</span>
-                <span style={{ fontSize: '18px', fontWeight: '700', color: 'var(--primary)' }}>{money(activeReceipt.amountPaise)}</span>
+                <span style={{ fontSize: '18px', fontWeight: '700', color: 'var(--success-foreground)' }}>{money(activeReceipt.amountPaise)}</span>
               </div>
               {activeReceipt.balanceAfterPaise !== null && (
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '6px', fontSize: '12px', color: 'var(--muted)' }}>
-                  <span>{t('payments.remainingDue', 'Remaining balance due')}:</span>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '6px', fontSize: '12px', color: 'var(--muted-foreground)' }}>
+                  <span>Balance immediately after payment:</span>
                   <b>{money(activeReceipt.balanceAfterPaise)}</b>
+                </div>
+              )}
+              {activeReceipt.currentBillBalancePaise !== null && activeReceipt.currentBillBalancePaise !== undefined && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '6px', fontSize: '12px', color: 'var(--muted-foreground)' }}>
+                  <span>Current bill balance:</span>
+                  <b>{money(activeReceipt.currentBillBalancePaise)}</b>
                 </div>
               )}
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <small style={{ color: 'var(--muted)', fontSize: '11px' }}>
+              <small style={{ color: 'var(--muted-foreground)', fontSize: '11px' }}>
                 {t('payments.receiptFootnote', 'Digital receipt generated by GauAmrut Platform.')}
               </small>
               <button type="button" className="button small" onClick={() => window.print()}>
@@ -838,6 +985,16 @@ export default function Payments() {
             </div>
           </div>
         </Modal>
+      )}
+
+      {shareBill && (
+        <ShareToWhatsAppModal
+          fileName={shareBill.filename}
+          blob={shareBill.blob}
+          caption={`Monthly milk bill (${shareBill.filename.replace('bill-', '').replace('.pdf', '')})`}
+          close={() => setShareBill(null)}
+          onSent={() => setNotice('Bill PDF sent to WhatsApp.')}
+        />
       )}
     </>
   );

@@ -1,12 +1,14 @@
 import { useState } from 'react';
 import { useDispatch } from 'react-redux';
+import { Link, useNavigate } from 'react-router-dom';
 import { ArrowRight, ArrowUpRight, Droplets, Leaf } from 'lucide-react';
 import { api, message, preview, signIn } from '../../lib';
 import { Brand, Field, Notice } from '../../components/ui';
-export default function Auth() {
-  const dispatch = useDispatch();
+export default function Auth({ redirectPath = '/' }) {
+  const dispatch = useDispatch(); const navigate = useNavigate();
   const [mode, setMode] = useState('login'), [email, setEmail] = useState(''), [error, setError] = useState(''), [busy, setBusy] = useState(false), [otp, setOtp] = useState(''), [dairy, setDairy] = useState(null), [onboarding, setOnboarding] = useState(null);
   const reset = next => { setMode(next); setError(''); setOtp(''); setOnboarding(null); };
+  const enter = data => { dispatch(signIn(data)); navigate(redirectPath.startsWith('/') ? redirectPath : '/', { replace: true }); };
   async function submit(event) {
     event.preventDefault(); setBusy(true); setError('');
     const body = Object.fromEntries(new FormData(event.currentTarget));
@@ -16,16 +18,16 @@ export default function Auth() {
         const r = await api.post(mode === 'register' ? '/auth/register' : '/auth/customer/register', mode === 'customer' ? { ...body, code: dairy.code } : body);
         setEmail(body.email); setOtp(r.data.data.developmentOtp || ''); setMode('verify');
       } else if (mode === 'claim') {
-        const r = await api.post('/auth/customer/complete', { onboardingToken: onboarding.onboardingToken, ...(body.history === 'new' ? { createNew: true } : { claimCustomerId: body.history }) }); dispatch(signIn(r.data.data));
+        const r = await api.post('/auth/customer/complete', { onboardingToken: onboarding.onboardingToken, ...(body.history === 'new' ? { createNew: true } : { claimCustomerId: body.history }) }); enter(r.data.data);
       } else {
         const r = await api.post(mode === 'verify' ? '/auth/verify' : '/auth/login', mode === 'verify' ? { email, otp: body.otp } : body);
-        if (r.data.data.onboardingRequired) { setOnboarding(r.data.data); setMode('claim'); } else dispatch(signIn(r.data.data));
+        if (r.data.data.onboardingRequired) { setOnboarding(r.data.data); setMode('claim'); } else enter(r.data.data);
       }
     } catch (e) { setError(message(e)); } finally { setBusy(false); }
   }
   const titles = { login: 'Your dairy day starts here.', register: 'Let’s meet your dairy.', resolve: 'Find your dairy.', customer: 'Join your dairy.', verify: 'Check your inbox.', claim: 'Connect your account.' };
   const buttons = { login: 'Sign in', register: 'Create your dairy account', resolve: 'Find dairy', customer: 'Verify my email', verify: 'Verify & get started', claim: 'Confirm & connect' };
-  return <div className="auth-layout"><section className="auth-story"><Brand/><div><span className="pill light"><Leaf size={15}/> Fresh starts, every day</span><h1>A little less admin.<br/>A lot more peace<br/>of mind.</h1><p>Your customers, daily deliveries, and payments.<br/>Together in one thoughtfully simple place.</p><div className="milk-illustration"><div className="bottle"><span>GA<br/><small>PURE & FRESH</small><Droplets size={34}/></span></div><div className="orbit orbit-one"/><div className="orbit orbit-two"/><Leaf className="illustration-leaf" size={90}/></div></div><span className="auth-footer">Made for the people who bring goodness to every doorstep.</span></section><section className="auth-panel"><div className="auth-card"><span className="eyebrow">WELCOME TO GAUAMRUT</span><h2>{titles[mode]}</h2><p>{mode === 'verify' ? `Enter the six-digit code sent to ${email}.` : mode === 'resolve' ? 'Enter the eight-character code shared by your milkman.' : 'Simple tools for a better everyday business.'}</p>
+  return <div className="auth-layout"><section className="auth-story"><Brand/><div><span className="pill light"><Leaf size={15}/> Fresh starts, every day</span><h1>A little less admin.<br/>A lot more peace<br/>of mind.</h1><p>Your customers, daily deliveries, and payments.<br/>Together in one thoughtfully simple place.</p><div className="milk-illustration"><div className="bottle"><span>GA<br/><small>PURE & FRESH</small><Droplets size={34}/></span></div><div className="orbit orbit-one"/><div className="orbit orbit-two"/><Leaf className="illustration-leaf" size={90}/></div></div><span className="auth-footer">Made for the people who bring goodness to every doorstep. · <Link to="/privacy">Privacy</Link> · <Link to="/terms">Terms</Link> · <Link to="/support">Support</Link></span></section><section className="auth-panel"><div className="auth-card"><span className="eyebrow">WELCOME TO GAUAMRUT</span><h2>{titles[mode]}</h2><p>{mode === 'verify' ? `Enter the six-digit code sent to ${email}.` : mode === 'resolve' ? 'Enter the eight-character code shared by your milkman.' : 'Simple tools for a better everyday business.'}</p>
     <form onSubmit={submit} key={mode}>
       {mode === 'resolve' && <Field label="Dairy code" name="code" required minLength={8} maxLength={8} autoCapitalize="characters"/>}
       {mode === 'customer' && <Notice>You are joining <strong>{dairy.businessName}</strong>. <button type="button" className="text-button" onClick={() => reset('resolve')}>Choose another dairy</button></Notice>}

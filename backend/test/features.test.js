@@ -1,16 +1,38 @@
 const request = require('supertest');
 const mongoose = require('mongoose');
+const zlib = require('zlib');
 const { MongoMemoryReplSet } = require('mongodb-memory-server');
 const { createApp } = require('../src/app');
-const { User, Milkman, Customer, Bill, Payment, Record, Dispute, DeliveryAdjustment, Notification, AdminSetting } = require('../src/models');
+const { User, Milkman, Customer, Bill, Record } = require('../src/models');
 const { createNotification } = require('../src/notifications');
+const { generateBillPdf, pdfText } = require('../src/pdf');
 const jwt = require('jsonwebtoken');
+
+// Recovers the visible text of a pdfkit document by inflating its content
+// streams and decoding the PDF string arrays (pdfkit writes text as hex/literal
+// chunks inside TJ operators), so assertions can check headings and names.
+function decodePdfChunk(chunk) {
+  if (chunk.startsWith('<')) return Buffer.from(chunk.slice(1, -1).replace(/\s+/g, ''), 'hex').toString('latin1');
+  return chunk.slice(1, -1).replace(/\\([0-7]{1,3}|.)/g, (_, esc) => (/^[0-7]+$/.test(esc) ? String.fromCharCode(parseInt(esc, 8)) : ({ n: '\n', r: '\r', t: '\t' }[esc] ?? esc)));
+}
+function pdfContent(buf) {
+  const raw = buf.toString('latin1');
+  const re = /stream\r?\n([\s\S]*?)endstream/g;
+  let out = '', m;
+  while ((m = re.exec(raw))) {
+    try { out += zlib.inflateSync(Buffer.from(m[1].replace(/\r?\n$/, ''), 'latin1')).toString('latin1'); } catch { /* non-deflate stream */ }
+  }
+  return out
+    .replace(/\[((?:\((?:\\[\s\S]|[^()\\])*\)|<[0-9A-Fa-f\s]*>|[-\d.]|\s)*)\]\s*TJ/g, (_, inner) =>
+      (inner.match(/\((?:\\[\s\S]|[^()\\])*\)|<[0-9A-Fa-f\s]*>/g) || []).map(decodePdfChunk).join(''))
+    .replace(/(\((?:\\[\s\S]|[^()\\])*\)|<[0-9A-Fa-f\s]*>)\s*Tj/g, (_, chunk) => decodePdfChunk(chunk));
+}
 
 process.env.JWT_SECRET = '12345678901234567890123456789012';
 process.env.CORS_ORIGINS = 'http://127.0.0.1:5173';
 
 let replSet, app;
-let vendorToken, customerToken, superAdminToken, operationsToken;
+let vendorToken, customerToken, superAdminToken;
 let vendorUser, customerUser, superAdminUser, operationsUser;
 let milkmanDoc, customerDoc, testBill;
 const makeToken = user => jwt.sign({ sv: 0 }, process.env.JWT_SECRET, { subject: String(user._id), issuer: 'gauamrut', algorithm: 'HS256' });
@@ -38,7 +60,6 @@ beforeAll(async () => {
     adminRole: 'operations',
     name: 'Operations Admin'
   });
-  operationsToken = makeToken(operationsUser);
 
   // Create vendor
   const milkmanId = new mongoose.Types.ObjectId();
@@ -220,6 +241,20 @@ describe('New SRS Features Integration Tests', () => {
   });
 
   describe('PDF Generation & Additional CSV Reports', () => {
+    it('keeps emoji, symbols and supported scripts, replacing unknown printable glyphs visibly', () => {
+      expect(pdfText('Jay Dwarkadish 💜')).toBe('Jay Dwarkadish 💜');
+      expect(pdfText('😀 🎉 🚀 ❤️ 💙 💚 💛 💜 👍🏽 👨‍👩‍👧‍👦')).toBe('😀 🎉 🚀 ❤️ 💙 💚 💛 💜 👍 👨‍👩‍👧‍👦');
+      expect(pdfText('© ® ™ € ₹ ± × ÷ √ ∞ ≠ ≤ ≥ → ← ↔ ★ ♫ ☯ ⚛ 🜀')).toBe('© ® ™ € ₹ ± × ÷ √ ∞ ≠ ≤ ≥ → ← ↔ ★ ♫ ☯ ⚛ 🜀');
+      expect(pdfText('Café Müller')).toBe('Café Müller');
+      expect(pdfText('ગૌ અમૃત')).toBe('ગૌ અમૃત');
+      expect(pdfText('  spaced   out  ')).toBe('spaced out');
+      expect(pdfText('', 'Fallback')).toBe('Fallback');
+      expect(pdfText('Milk ₹100 & Co')).toBe('Milk ₹100 & Co'); // ₹ is embedded, not stripped
+      expect(pdfText('tab\there')).toBe('tab here');
+      expect(pdfText('bell\u0007end')).toBe('bellend'); // no visual form in a PDF
+      expect(pdfText('unknown\u{10FFFF}glyph')).toBe('unknown�glyph');
+    });
+
     it('generates PDF invoice buffer for a monthly bill', async () => {
       const res = await request(app)
         .get(`/api/bills/${testBill._id}/pdf`)
@@ -229,6 +264,94 @@ describe('New SRS Features Integration Tests', () => {
       expect(res.headers['content-type']).toBe('application/pdf');
       expect(res.body).toBeInstanceOf(Buffer);
       expect(res.body.length).toBeGreaterThan(500);
+    });
+
+    it('paginates every monthly delivery row and embeds the purple-heart dairy name', async () => {
+      const records = Array.from({ length: 58 }, (_, idx) => ({
+        date: `ENTRY-${String(idx + 1).padStart(3, '0')}`,
+        shift: idx % 2 ? 'evening' : 'morning',
+        type: idx % 2 ? 'buffalo' : 'cow',
+        quantityMl: 1000,
+        ratePaise: 6000,
+        totalPaise: 6000
+      }));
+      const pdf = await generateBillPdf({
+        bill: { month: '2026-10', openingPaise: 0, chargesPaise: 348000, paidPaise: 0, closingPaise: 348000 },
+        milkman: { businessName: 'Jay Dwarkadhish \u{1F49C}', name: 'Jay', phone: '9876543210' },
+        customer: { name: 'Test Customer' },
+        records,
+        payments: []
+      });
+      const content = pdfContent(pdf);
+
+      expect((pdf.toString('latin1').match(/\/Type \/Page\b/g) || []).length).toBeGreaterThan(1);
+      expect(content).toContain('ENTRY-001');
+      expect(content).toContain('ENTRY-058');
+      expect(content).not.toContain('more deliveries');
+      expect(content).toMatch(/<d83d\s+dc9c>/i);
+    });
+
+    it('heads the bill PDF with the dairy name, watermarks GauAmrut, and shows the customer name', async () => {
+      await Customer.updateOne({ _id: customerDoc._id }, { name: 'Ramesh Patel' });
+      const res = await request(app)
+        .get(`/api/bills/${testBill._id}/pdf`)
+        .set('Authorization', `Bearer ${vendorToken}`);
+
+      expect(res.status).toBe(200);
+      const content = pdfContent(res.body);
+      expect(content).toContain('GauAmrut Organic Farm'); // dairy name is the heading
+      expect(content).not.toContain('GAUAMRUT'); // the old fixed heading is gone
+      expect((content.match(/GauAmrut/g) || []).length).toBeGreaterThanOrEqual(3); // heading + footer + watermark
+      expect(content).toContain('Ramesh Patel'); // plain names stay real, searchable text
+    });
+
+    it('renders emoji in a name as embedded glyphs instead of stripping or mangling them', async () => {
+      await Customer.updateOne({ _id: customerDoc._id }, { name: 'Ramesh 😀 Patel' });
+      try {
+        const res = await request(app)
+          .get(`/api/bills/${testBill._id}/pdf`)
+          .set('Authorization', `Bearer ${vendorToken}`);
+
+        expect(res.status).toBe(200);
+        expect(res.body).toBeInstanceOf(Buffer);
+        const content = pdfContent(res.body);
+        // The emoji is drawn: pdfkit embedded its outline and recorded it in the
+        // PDF's ToUnicode table as the UTF-16BE surrogate pair <d83d de00>
+        // (U+1F600). The old WinAnsi-only path could not do this — it dropped the
+        // character or emitted mojibake — so this is the regression guard.
+        expect(content).toMatch(/<d83d\s+de00>/i);
+        // The emoji must not turn into WinAnsi mojibake next to the name.
+        expect(content).not.toContain('Ø=Üçø');
+      } finally {
+        await Customer.updateOne({ _id: customerDoc._id }, { name: 'Ramesh Patel' });
+      }
+    });
+
+    it('exports the monthly delivery report as a branded PDF', async () => {
+      const res = await request(app)
+        .get('/api/reports/deliveries.pdf?month=2026-08')
+        .set('Authorization', `Bearer ${vendorToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.headers['content-type']).toBe('application/pdf');
+      expect(res.body).toBeInstanceOf(Buffer);
+      const content = pdfContent(res.body);
+      expect(content).toContain('GauAmrut Organic Farm');
+      expect(content).toContain('Monthly delivery report');
+      expect((content.match(/GauAmrut/g) || []).length).toBeGreaterThanOrEqual(3); // heading + footer + watermark
+    });
+
+    it('exports payments, orders and customer summary PDFs', async () => {
+      for (const path of ['/api/reports/payments.pdf?month=2026-08', '/api/reports/orders.pdf?month=2026-08', '/api/reports/customer-summary.pdf']) {
+        const res = await request(app)
+          .get(path)
+          .set('Authorization', `Bearer ${vendorToken}`);
+
+        expect(res.status).toBe(200);
+        expect(res.headers['content-type']).toBe('application/pdf');
+        expect(res.body).toBeInstanceOf(Buffer);
+        expect(res.body.length).toBeGreaterThan(500);
+      }
     });
 
     it('exports payments CSV report', async () => {
@@ -300,5 +423,59 @@ describe('New SRS Features Integration Tests', () => {
       expect(res.status).toBe(200);
       expect(res.body.data.verified).toBe(true);
     });
+  });
+});
+
+describe('Customers without a phone number', () => {
+  const base = { name: 'Leela Ben', email: '', address: '4, Gandhi Road', startDate: '2026-09-01', cowRatePaise: 6000, buffaloRatePaise: 8000, morningCowMl: 1000, eveningCowMl: 500 };
+  let phonelessId;
+
+  it('creates a customer whose phone is left empty, exactly like the add-customer form sends', async () => {
+    const res = await request(app)
+      .post('/api/customers')
+      .set('Authorization', `Bearer ${vendorToken}`)
+      .send({ ...base, phone: '' });
+    expect(res.status).toBe(201);
+    expect(res.body.data.phone).toBe('');
+    phonelessId = res.body.data._id;
+  });
+
+  it('accepts a creation payload that omits the phone field entirely', async () => {
+    const res = await request(app)
+      .post('/api/customers')
+      .set('Authorization', `Bearer ${vendorToken}`)
+      .send(base);
+    expect(res.status).toBe(201);
+    expect(res.body.data.phone).toBe('');
+  });
+
+  it('lists them in the directory like any other customer', async () => {
+    const res = await request(app)
+      .get('/api/customers?page=1')
+      .set('Authorization', `Bearer ${vendorToken}`);
+    expect(res.status).toBe(200);
+    expect(res.body.data.some(c => String(c._id) === String(phonelessId))).toBe(true);
+  });
+
+  it('still rejects a malformed phone number', async () => {
+    const res = await request(app)
+      .put(`/api/customers/${phonelessId}`)
+      .set('Authorization', `Bearer ${vendorToken}`)
+      .send({ ...base, status: 'active', phone: 'call-me-maybe' });
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('lets the dairy add a phone later when the customer gets one', async () => {
+    const res = await request(app)
+      .put(`/api/customers/${phonelessId}`)
+      .set('Authorization', `Bearer ${vendorToken}`)
+      .send({ ...base, status: 'active', phone: '9812345678' });
+    expect(res.status).toBe(200);
+    expect(res.body.data.phone).toBe('9812345678');
+    const list = await request(app)
+      .get('/api/customers?page=1')
+      .set('Authorization', `Bearer ${vendorToken}`);
+    expect(list.body.data.find(c => String(c._id) === String(phonelessId)).phone).toBe('9812345678');
   });
 });

@@ -2,6 +2,7 @@ import React from 'react';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { Provider } from 'react-redux';
+import { MemoryRouter } from 'react-router-dom';
 import Products from './Products';
 import Orders from './Orders';
 import Disputes from './Disputes';
@@ -207,7 +208,9 @@ describe('Disputes Component', () => {
   test('Renders disputes list, opens thread and submits reply', async () => {
     render(
       <Provider store={store}>
-        <Disputes />
+        <MemoryRouter>
+          <Disputes />
+        </MemoryRouter>
       </Provider>
     );
 

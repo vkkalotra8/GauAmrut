@@ -5,23 +5,30 @@ const { User, Milkman, Customer, Audit } = require('./models');
 const { AppError } = require('./domain');
 const { wrap, vendor, validate } = require('./middleware');
 const schemas = require('./validation');
+const { issueVerification, confirmVerification } = require('./verification');
 async function change(req, action, operation) {
   const session = await mongoose.startSession();
   let result;
   try {
     await session.withTransaction(async () => {
-      const { before, after, target } = await operation(session);
-      await Audit.create([{ milkman_id: req.tenant, actor: req.user._id, action, target: String(target), requestId: req.requestId, before, after }], { session });
+      const { before, after, target, audit = true } = await operation(session);
+      if (audit) await Audit.create([{ milkman_id: req.tenant, actor: req.user._id, action, target: String(target), requestId: req.requestId, before, after }], { session });
       result = after;
     });
     return result;
   } finally { await session.endSession(); }
 }
-function accountsRoutes() {
+function accountsRoutes(limiter) {
   const router = express.Router();
   router.get('/profile', wrap(async (req, res) => {
     const profile = req.user.role === 'customer' ? await Customer.findOne({ _id: req.user.customer_id, milkman_id: req.tenant }).lean() : await Milkman.findOne({ _id: req.tenant, user_id: req.user._id }).lean();
     if (!profile) throw new AppError(404, 'NOT_FOUND', 'Profile was not found.');
+    if (req.user.role === 'customer' && profile.user_id && !profile.emailVerifiedAt && profile.email && profile.email === req.user.email) {
+      // Email ownership was proven by the registration code; backfill the flag once.
+      const verifiedAt = new Date();
+      await Customer.updateOne({ _id: profile._id }, { $set: { emailVerifiedAt: verifiedAt } });
+      profile.emailVerifiedAt = verifiedAt;
+    }
     res.json({ success: true, data: profile });
   }));
   router.patch('/profile', wrap(async (req, res) => {
@@ -53,6 +60,23 @@ function accountsRoutes() {
     }
     throw new AppError(403, 'FORBIDDEN', 'This profile form is for dairy or customer accounts.');
   }));
+  router.post('/profile/verification/request', limiter, validate(schemas.verificationRequest), wrap(async (req, res) => {
+    if (req.user.role !== 'customer') throw new AppError(403, 'FORBIDDEN', 'Contact verification is available from a customer profile.');
+    const customer = await Customer.findOne({ _id: req.user.customer_id, milkman_id: req.tenant });
+    if (!customer) throw new AppError(404, 'NOT_FOUND', 'Profile was not found.');
+    const data = await issueVerification(customer, req.body.channel);
+    res.status(202).json({ success: true, data });
+  }));
+  router.post('/profile/verification/confirm', validate(schemas.verificationConfirm), wrap(async (req, res) => {
+    if (req.user.role !== 'customer') throw new AppError(403, 'FORBIDDEN', 'Contact verification is available from a customer profile.');
+    const customer = await Customer.findOne({ _id: req.user.customer_id, milkman_id: req.tenant });
+    if (!customer) throw new AppError(404, 'NOT_FOUND', 'Profile was not found.');
+    const data = await change(req, 'customer.contact.verified', async () => {
+      const result = await confirmVerification(customer, req.body.channel, req.body.otp);
+      return { before: { channel: result.channel, verifiedAt: null }, after: { channel: result.channel, verifiedAt: result.verifiedAt }, target: customer._id };
+    });
+    res.json({ success: true, data });
+  }));
   router.put('/customers/:id', vendor, validate(schemas.customer.keys({ status: schemas.Joi.string().valid('active', 'inactive').required() })), wrap(async (req, res) => {
     if (req.body.endDate && req.body.endDate < req.body.startDate) throw new AppError(400, 'INVALID_DATES', 'End date must be on or after start date.');
     const data = await change(req, 'customer.updated', async session => {
@@ -60,8 +84,13 @@ function accountsRoutes() {
       if (!profile) throw new AppError(404, 'NOT_FOUND', 'Customer was not found.');
       const email = req.body.email.toLowerCase().trim();
       if (profile.user_id && email !== profile.email) throw new AppError(409, 'VERIFIED_EMAIL_LOCKED', 'A linked account’s verified email cannot be changed by the dairy.');
+      const emailChanged = email !== profile.email;
+      const phoneChanged = 'phone' in req.body && String(req.body.phone || '') !== String(profile.phone || '');
       const before = profile.toObject();
-      Object.assign(profile, req.body, { email }); await profile.save({ session });
+      Object.assign(profile, req.body, { email });
+      if (emailChanged) profile.emailVerifiedAt = null;
+      if (phoneChanged) profile.phoneVerifiedAt = null;
+      await profile.save({ session });
       if (profile.user_id) await User.updateOne({ _id: profile.user_id }, { name: profile.name }, { session });
       return { before, after: profile.toObject(), target: profile._id };
     });

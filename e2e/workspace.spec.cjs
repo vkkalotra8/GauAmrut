@@ -12,7 +12,7 @@ test('desktop demo dashboard and mobile directory remain usable', async ({ page 
   await expect(page.getByRole('heading', { name: 'Rajesh Patel' })).toHaveCount(0);
   await page.setViewportSize({ width: 375, height: 812 });
   await page.getByRole('button', { name: 'Open navigation' }).click();
-  await page.getByRole('link', { name: 'Overview' }).click();
+  await page.locator('aside.sidebar').getByRole('link', { name: 'Overview' }).click();
   await expect(page.getByRole('heading', { name: 'A fresh day, Aarav.' })).toBeVisible();
   await page.screenshot({ path: 'test-results/dashboard-mobile.png', fullPage: true });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);

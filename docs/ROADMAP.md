@@ -36,9 +36,9 @@ The source SRS describes the target product. Its embedded workflow and approval 
 
 ## Milestone 4 — platform operations and production acceptance
 
-1. Named admin permissions, last-super-admin safeguard, settings encryption/versioning, operational dashboards, activity log.
+1. **Implemented:** named admin permissions, user/dairy lifecycle controls, last-super-admin safeguard, settings versioning, operational dashboards and activity log.
 2. Tenant/user-scoped Socket.IO; durable email/WhatsApp outboxes with deduplication and retries.
-3. Collection validators and index migrations, backup/restore rehearsals, metrics, tracing, outage tests, load baseline.
+3. **Implemented in repository:** controlled payment-reference migration, production auto-index prohibition, backup/restore tooling, protected metrics, structured request logs, CI gates, staging smoke automation and production runbook. **Operator evidence still required:** Atlas restore rehearsal, provider alerts, outage tests and load baseline.
 4. Preview/staging deployments, CI merge gates, rollback rehearsal, deployed tenant and retry tests, then production launch.
 
 ## Product decisions preserved
@@ -47,4 +47,4 @@ Business names are display-only, customer switching is not exposed, INR operatio
 
 ## Admin console increment
 
-Implemented local super-admin bootstrap, admin JWT login, named read permissions, dashboard counts, paginated user/dairy directories and activity log. Admins cannot use tenant endpoints as an ownership bypass; customers and vendors cannot access admin endpoints. The console is currently read-only. Account lifecycle actions, access-control editing and last-super-admin safeguards for those future mutations, financial admin workflows, settings and backup operations remain pending.
+Implemented local super-admin bootstrap, admin JWT login, named permissions, dashboard counts, paginated directories, activity log, account activation, admin-role changes, last-super-admin safeguards, dairy verification, settings and dispute operations. Admins cannot use tenant endpoints as an ownership bypass. Backup execution remains an infrastructure operator responsibility rather than an in-browser admin action.

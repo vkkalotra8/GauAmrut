@@ -30,6 +30,7 @@ async function seed() {
     });
     console.log('Created development account owner@gauamrut.local using your SEED_PASSWORD.');
   } finally { await session.endSession(); }
+}
 seed().catch(e => { console.error(e.message); process.exitCode = 1; }).finally(async () => {
   await mongoose.disconnect();
   if (localMongoChild) {

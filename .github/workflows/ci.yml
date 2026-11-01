@@ -1,8 +1,14 @@
 name: GauAmrut checks
-on: [push, pull_request]
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   validate:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -18,9 +24,24 @@ jobs:
       - run: npm run lint
       - run: npm test
       - run: npm run build
+      - run: npm run test:contrast
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e
         env:
           PLAYWRIGHT_CHANNEL: chromium
-      - run: npm --prefix backend audit --audit-level=high
-      - run: npm --prefix frontend audit --audit-level=high
+      - run: npm --prefix backend audit --omit=dev --audit-level=high
+      - run: npm --prefix frontend audit --omit=dev --audit-level=high
+      - run: npm --prefix backend audit --audit-level=critical
+      - run: npm --prefix frontend audit --audit-level=critical
+
+  staging-smoke:
+    if: github.event_name == 'workflow_dispatch' && vars.STAGING_API_URL != ''
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm run staging:smoke
+        env:
+          STAGING_API_URL: ${{ vars.STAGING_API_URL }}

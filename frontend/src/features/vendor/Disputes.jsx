@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useSelector } from 'react-redux';
+import { useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { MessageSquare, AlertCircle, CheckCircle2, XCircle, Send, ShieldCheck, Clock } from 'lucide-react';
 import { Heading, Notice, State, Empty, Modal, Field } from '../../components/ui';
@@ -19,6 +20,7 @@ export default function Disputes() {
   const resource = useData(query, demoDisputes);
 
   const [activeDispute, setActiveDispute] = useState(null);
+  const [searchParams, setSearchParams] = useSearchParams();
   const [resolvingModal, setResolvingModal] = useState(false);
   const [replyMessage, setReplyMessage] = useState('');
   const [error, setError] = useState('');
@@ -39,6 +41,46 @@ export default function Disputes() {
       setActiveDispute(d);
     }
   }
+
+  // Deep link: a notification carries ?thread=<disputeId>. Open that thread and
+  // strip the query so closing it doesn't reopen on the next render.
+  useEffect(() => {
+    const threadId = searchParams.get('thread');
+    if (!threadId || activeDispute) return;
+    if (demo) {
+      const found = (resource.data || []).find(d => d._id === threadId);
+      if (found) setActiveDispute(found);
+      setSearchParams({}, { replace: true });
+      return;
+    }
+    let cancelled = false;
+    api.get(`/disputes/${threadId}`)
+      .then(res => { if (!cancelled) setActiveDispute(res.data.data); })
+      .catch(() => {})
+      .finally(() => setSearchParams({}, { replace: true }));
+    return () => { cancelled = true; };
+  }, [searchParams, activeDispute, demo, resource.data, setSearchParams]);
+
+  // Live thread: while the modal is open, poll for new replies so the other
+  // party's messages appear without a manual refresh. Skips while typing or the
+  // tab is hidden.
+  useEffect(() => {
+    if (!activeDispute?._id || demo) return;
+    const id = activeDispute._id;
+    const tick = async () => {
+      if (document.hidden) return;
+      if (document.activeElement && document.activeElement.tagName === 'TEXTAREA') return;
+      try {
+        const res = await api.get(`/disputes/${id}`);
+        const fresh = res.data.data;
+        setActiveDispute(prev => (prev && prev._id === id && (fresh.replies?.length || 0) > (prev.replies?.length || 0) ? fresh : prev));
+      } catch {
+        // Keep the last good thread on a transient poll failure.
+      }
+    };
+    const interval = setInterval(tick, 7000);
+    return () => clearInterval(interval);
+  }, [activeDispute?._id, demo]);
 
   // Send reply
   async function handleSendReply(e) {
@@ -134,7 +176,7 @@ export default function Disputes() {
 
       <div className="filter-bar" style={{ marginBottom: '16px' }}>
         <div className="field" style={{ minWidth: '160px' }}>
-          <label style={{ fontSize: '11px', color: 'var(--muted)', marginBottom: '4px' }}>
+          <label style={{ fontSize: '11px', color: 'var(--muted-foreground)', marginBottom: '4px' }}>
             {t('common.status', 'Status')}
           </label>
           <select
@@ -150,7 +192,7 @@ export default function Disputes() {
         </div>
 
         <div className="field" style={{ minWidth: '160px' }}>
-          <label style={{ fontSize: '11px', color: 'var(--muted)', marginBottom: '4px' }}>
+          <label style={{ fontSize: '11px', color: 'var(--muted-foreground)', marginBottom: '4px' }}>
             {t('disputes.type', 'Issue Category')}
           </label>
           <select
@@ -177,7 +219,7 @@ export default function Disputes() {
                     border: '1px solid var(--border)',
                     borderRadius: '10px',
                     padding: '18px 20px',
-                    background: '#fff',
+                    background: 'var(--card)',
                     display: 'flex',
                     justifyContent: 'space-between',
                     alignItems: 'center',
@@ -190,19 +232,8 @@ export default function Disputes() {
                       <span className="pill capitalize">{typeLabels[d.type] || d.type}</span>
                       <span className="pill" style={{ textTransform: 'uppercase' }}>Target: {d.targetType}</span>
                       <span
-                        className="status"
-                        style={{
-                          background:
-                            d.status === 'resolved' ? '#e9f5e8' :
-                            d.status === 'under_review' ? '#e8edf8' :
-                            d.status === 'cancelled' ? '#f3f3f3' : '#fcf5e7',
-                          color:
-                            d.status === 'resolved' ? '#2e7424' :
-                            d.status === 'under_review' ? '#28559a' :
-                            d.status === 'cancelled' ? '#666' : '#926a19',
-                          borderColor: 'currentColor',
-                          fontWeight: '600'
-                        }}
+                        className={`status ${d.status === 'resolved' ? 'success' : d.status === 'under_review' ? 'info' : d.status === 'cancelled' ? 'neutral' : 'pending'}`}
+                        style={{ fontWeight: '600' }}
                       >
                         {d.status === 'resolved' && <CheckCircle2 size={12} />}
                         {d.status === 'under_review' && <Clock size={12} />}
@@ -213,11 +244,11 @@ export default function Disputes() {
                     </div>
 
                     <h3 style={{ fontSize: '15px', marginBottom: '4px' }}>{d.title}</h3>
-                    <p style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '8px' }}>
+                    <p style={{ fontSize: '12px', color: 'var(--muted-foreground)', marginBottom: '8px' }}>
                       {d.description}
                     </p>
 
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '11px', color: 'var(--muted)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '11px', color: 'var(--muted-foreground)' }}>
                       <span>From: <b>{d.customerName || 'Customer'}</b></span>
                       {d.customerPhone && <span>· {d.customerPhone}</span>}
                       <span>· {new Date(d.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
@@ -252,28 +283,17 @@ export default function Disputes() {
           title={`Dispute: ${activeDispute.title}`}
           close={() => setActiveDispute(null)}
         >
-          <div style={{ marginBottom: '14px', padding: '10px 14px', background: '#f9faf7', borderRadius: '8px' }}>
+          <div className="note-strip" style={{ marginBottom: '14px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
               <span className="pill capitalize">{typeLabels[activeDispute.type] || activeDispute.type}</span>
               <span
-                className="status"
-                style={{
-                  background:
-                    activeDispute.status === 'resolved' ? '#e9f5e8' :
-                    activeDispute.status === 'under_review' ? '#e8edf8' :
-                    activeDispute.status === 'cancelled' ? '#f3f3f3' : '#fcf5e7',
-                  color:
-                    activeDispute.status === 'resolved' ? '#2e7424' :
-                    activeDispute.status === 'under_review' ? '#28559a' :
-                    activeDispute.status === 'cancelled' ? '#666' : '#926a19',
-                  borderColor: 'currentColor',
-                  fontWeight: '600'
-                }}
+                className={`status ${activeDispute.status === 'resolved' ? 'success' : activeDispute.status === 'under_review' ? 'info' : activeDispute.status === 'cancelled' ? 'neutral' : 'pending'}`}
+                style={{ fontWeight: '600' }}
               >
                 {activeDispute.status?.replace('_', ' ') || ''}
               </span>
             </div>
-            <p style={{ fontSize: '12px', color: 'var(--muted)', margin: '4px 0' }}>
+            <p style={{ fontSize: '12px', color: 'var(--muted-foreground)', margin: '4px 0' }}>
               Customer: <b>{activeDispute.customerName || 'Customer'}</b>
             </p>
           </div>
@@ -295,16 +315,13 @@ export default function Disputes() {
               return (
                 <div
                   key={i}
+                  className={`chat-bubble ${isOwner ? 'me' : 'other'}`}
                   style={{
                     alignSelf: isOwner ? 'flex-end' : 'flex-start',
-                    maxWidth: '82%',
-                    background: isOwner ? '#e8f3ea' : '#f0f3f6',
-                    border: `1px solid ${isOwner ? '#d2e7d6' : '#dde3eb'}`,
-                    borderRadius: '10px',
-                    padding: '10px 14px'
+                    maxWidth: '82%'
                   }}
                 >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', marginBottom: '4px', fontSize: '10px', color: 'var(--muted)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', marginBottom: '4px', fontSize: '10px', color: 'var(--muted-foreground)' }}>
                     <b>{r.authorName || (isOwner ? 'Dairy Owner' : 'Customer')} ({r.role})</b>
                     <span>{new Date(r.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                   </div>
@@ -318,11 +335,11 @@ export default function Disputes() {
 
           {/* Resolution banner if resolved */}
           {activeDispute.status === 'resolved' && (
-            <div style={{ padding: '12px 14px', background: '#e9f5e8', border: '1px solid #cce5cb', borderRadius: '8px', marginBottom: '14px' }}>
-              <b style={{ color: '#2e7424', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px' }}>
+            <div className="resolved-banner" style={{ marginBottom: '14px' }}>
+              <b className="resolved-title">
                 <CheckCircle2 size={16} /> Resolved by Dairy
               </b>
-              <p style={{ fontSize: '12px', margin: '6px 0 0', color: '#2b5025' }}>
+              <p>
                 {activeDispute.resolutionNotes}
               </p>
             </div>
@@ -338,11 +355,13 @@ export default function Disputes() {
                   rows={2}
                   style={{
                     flex: 1,
-                    border: '1px solid #dfe5d8',
+                    border: '1px solid var(--border)',
                     borderRadius: '6px',
                     padding: '8px 12px',
                     fontFamily: 'inherit',
-                    fontSize: '13px'
+                    fontSize: '13px',
+                    background: 'var(--card)',
+                    color: 'var(--foreground)'
                   }}
                   placeholder={t('disputes.replyPlaceholder', 'Type a reply to the customer…')}
                   value={replyMessage}
@@ -363,8 +382,7 @@ export default function Disputes() {
               <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
                 <button
                   type="button"
-                  className="button"
-                  style={{ color: '#2e7424', borderColor: '#cce5cb' }}
+                  className="button success-ghost"
                   onClick={() => setResolvingModal(true)}
                   disabled={busy}
                 >
@@ -373,7 +391,7 @@ export default function Disputes() {
               </div>
             </form>
           ) : (
-            <div style={{ textAlign: 'center', padding: '10px', color: 'var(--muted)', fontSize: '12px' }}>
+            <div style={{ textAlign: 'center', padding: '10px', color: 'var(--muted-foreground)', fontSize: '12px' }}>
               This dispute is closed. No further replies can be sent.
             </div>
           )}
@@ -400,9 +418,6 @@ export default function Disputes() {
                 rows={3}
                 placeholder="e.g., Verified delivery route records, issued ₹60 credit adjustment for missing 1L milk."
                 style={{
-                  border: '1px solid #dfe5d8',
-                  borderRadius: '6px',
-                  padding: '10px 12px',
                   width: '100%',
                   fontFamily: 'inherit',
                   fontSize: '13px'
